@@ -66,7 +66,7 @@ export const recommendationSchema = z.object({
   evidenceIds: z.array(z.string().min(1)).max(250),
   catalogVersion: z.string().min(1),
   routingSource: z.object({
-    backend: z.enum(["synthetic", "csv", "pretrained_model"]),
+    backend: z.enum(["synthetic", "llm", "csv", "pretrained_model"]),
     version: z.string().min(1),
     provenanceIds: z.array(z.string().min(1)).max(100),
   }),

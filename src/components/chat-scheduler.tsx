@@ -26,6 +26,12 @@ import {
   extractContextFile,
   type ContextExtractionSuccess,
 } from "@/lib/context";
+import {
+  followUpPromptFor,
+  type ChatEnhancementResponse,
+  type FollowUpQuestionType,
+} from "@/lib/llm/contracts";
+import { requestChatEnhancement } from "@/lib/llm/client";
 import { browserPersistence } from "@/lib/persistence";
 import type { ContextReview } from "@/lib/validation";
 
@@ -61,6 +67,24 @@ type DateChoice = {
   weekday: string;
   day: string;
 };
+
+type EnhancementStatus = "local" | "checking" | "llm" | "error";
+type EnhancementAttempt =
+  | ChatEnhancementResponse
+  | { requiredError: true }
+  | null;
+
+const MODEL_CONFIDENCE_THRESHOLD = 0.7;
+const FALLBACK_QUESTION_ORDER: FollowUpQuestionType[] = [
+  "onset",
+  "associated_symptoms",
+  "severity",
+  "progression",
+  "duration",
+  "injury_context",
+  "recurrence",
+  "current_status",
+];
 
 const SPECIALTY_LABELS: Record<SpecialtyId, string> = {
   "primary-care": "Primary care",
@@ -136,7 +160,31 @@ function approvedContextEvidence(context: ReviewedContext | null): SymptomEviden
     .map(({ negated: _negated, ...item }) => item);
 }
 
-export function ChatScheduler() {
+function mergeEvidence(...groups: SymptomEvidence[][]): SymptomEvidence[] {
+  const unique = new Map<string, SymptomEvidence>();
+  groups.flat().forEach((item) => {
+    const key = `${item.source}:${item.normalizedTerm}:${item.temporality}`;
+    if (!unique.has(key)) unique.set(key, item);
+  });
+  return [...unique.values()];
+}
+
+function chooseUnansweredQuestion(
+  answered: FollowUpQuestionType[],
+  preferred: FollowUpQuestionType,
+): FollowUpQuestionType {
+  return (
+    [preferred, ...FALLBACK_QUESTION_ORDER].find(
+      (questionType) => !answered.includes(questionType),
+    ) ?? "current_status"
+  );
+}
+
+export function ChatScheduler({
+  chatMode = "hybrid",
+}: {
+  chatMode?: "local" | "hybrid" | "llm-required";
+}) {
   const [conversationId, setConversationId] = useState(() => `conversation-${Date.now()}`);
   const [stage, setStage] = useState<Stage>("intake");
   const [messages, setMessages] = useState<Message[]>([
@@ -159,7 +207,14 @@ export function ChatScheduler() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const [confirmationError, setConfirmationError] = useState("");
+  const [enhancementStatus, setEnhancementStatus] =
+    useState<EnhancementStatus>("local");
+  const [answeredQuestionTypes, setAnsweredQuestionTypes] = useState<
+    FollowUpQuestionType[]
+  >([]);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const enhancementAbortRef = useRef<AbortController | null>(null);
+  const enhancementGenerationRef = useRef(0);
 
   const specialtyId = recommendation?.specialtyId ?? "primary-care";
   const specialtyLabel = SPECIALTY_LABELS[specialtyId];
@@ -217,6 +272,7 @@ export function ChatScheduler() {
 
   useEffect(() => {
     setAppointments(browserPersistence.loadAppointments());
+    return () => enhancementAbortRef.current?.abort();
   }, []);
 
   useEffect(() => {
@@ -283,10 +339,86 @@ export function ChatScheduler() {
     setAnnouncement(assistantText);
   };
 
+  async function tryEnhancement(
+    currentText: string,
+    currentStage: "intake" | "followup-one" | "followup-two",
+  ): Promise<EnhancementAttempt> {
+    if (chatMode === "local") {
+      setEnhancementStatus("local");
+      return null;
+    }
+
+    enhancementAbortRef.current?.abort();
+    const controller = new AbortController();
+    enhancementAbortRef.current = controller;
+    setEnhancementStatus("checking");
+    setAnnouncement("Checking for a more relevant follow-up.");
+
+    try {
+      const approvedEvidence = mergeEvidence(
+        evidence,
+        approvedContextEvidence(contextFile),
+      ).filter((item) => item.userApproved);
+      const response = await requestChatEnhancement(
+        {
+          conversationId,
+          stage: STAGE_MAP[currentStage],
+          recentMessages: [
+            ...messages.map((message) => ({
+              role: message.role,
+              content: message.text,
+            })),
+            { role: "user" as const, content: currentText },
+          ].slice(-8),
+          approvedEvidence,
+          answeredQuestionTypes,
+          followUpCount:
+            currentStage === "intake"
+              ? 0
+              : currentStage === "followup-one"
+                ? 1
+                : 2,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return null;
+      if (response.nextAction === "urgent_review") {
+        setEnhancementStatus(response.mode === "llm" ? "llm" : "local");
+        return response;
+      }
+      if (response.mode !== "llm") {
+        setEnhancementStatus("local");
+        return null;
+      }
+
+      setEnhancementStatus("llm");
+      return response;
+    } catch {
+      if (!controller.signal.aborted && chatMode === "llm-required") {
+        setEnhancementStatus("error");
+        return { requiredError: true };
+      }
+      if (!controller.signal.aborted) setEnhancementStatus("local");
+      return null;
+    } finally {
+      if (enhancementAbortRef.current === controller) {
+        enhancementAbortRef.current = null;
+      }
+    }
+  }
+
   async function submitMessage(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || !["intake", "followup-one", "followup-two"].includes(stage)) return;
+    if (
+      !text ||
+      enhancementStatus === "checking" ||
+      (stage !== "intake" &&
+        stage !== "followup-one" &&
+        stage !== "followup-two")
+    )
+      return;
 
     const combinedText = `${conversationText} ${text}`.trim();
     setConversationText(combinedText);
@@ -298,17 +430,55 @@ export function ChatScheduler() {
       setAnnouncement("Urgent symptoms identified. Routine scheduling stopped.");
       return;
     }
+
+    const intakeStage = stage;
+    const enhancementGeneration = ++enhancementGenerationRef.current;
+    const enhancement = await tryEnhancement(text, intakeStage);
+    if (enhancementGeneration !== enhancementGenerationRef.current) return;
+    if (enhancement && "requiredError" in enhancement) {
+      addMessage(
+        "assistant",
+        "AI enhancement is unavailable in required mode. Check the server configuration and try again.",
+      );
+      setAnnouncement(
+        "AI enhancement is unavailable in required mode. Check the server configuration.",
+      );
+      return;
+    }
+    if (enhancement?.nextAction === "urgent_review") {
+      setStage("urgent");
+      setAnnouncement("Urgent symptoms identified. Routine scheduling stopped.");
+      return;
+    }
+
     if (stage === "intake") {
+      const questionType =
+        enhancement?.nextAction === "ask_follow_up" &&
+        enhancement.questionType &&
+        !answeredQuestionTypes.includes(enhancement.questionType)
+          ? enhancement.questionType
+          : chooseUnansweredQuestion(answeredQuestionTypes, "onset");
+      setAnsweredQuestionTypes((current) => [...current, questionType]);
       continueWith(
         "followup-one",
-        "Thanks. When did this start, and is it getting better, worse, or staying about the same?",
+        `Thanks. ${followUpPromptFor(questionType)}`,
       );
       return;
     }
     if (stage === "followup-one") {
+      const questionType =
+        enhancement?.nextAction === "ask_follow_up" &&
+        enhancement.questionType &&
+        !answeredQuestionTypes.includes(enhancement.questionType)
+          ? enhancement.questionType
+          : chooseUnansweredQuestion(
+              answeredQuestionTypes,
+              "associated_symptoms",
+            );
+      setAnsweredQuestionTypes((current) => [...current, questionType]);
       continueWith(
         "followup-two",
-        "One more question: have you noticed any fever, injury, rash, numbness, or other changes that feel relevant?",
+        `One more question: ${followUpPromptFor(questionType)}`,
       );
       return;
     }
@@ -322,9 +492,36 @@ export function ChatScheduler() {
         ...conversationEvidence,
         ...approvedContextEvidence(contextFile),
       ];
-      setEvidence(routingEvidence);
+      const allEvidence = mergeEvidence(evidence, routingEvidence).filter(
+        (item) => item.userApproved,
+      );
+      setEvidence(allEvidence);
+
+      if (
+        enhancement?.nextAction === "recommend_specialist" &&
+        enhancement.specialtyId &&
+        enhancement.confidence >= MODEL_CONFIDENCE_THRESHOLD
+      ) {
+        setRecommendation(
+          recommendationFromRouting({
+            backend: "llm",
+            version: enhancement.modelVersion ?? "hosted-chat-model",
+            candidates: [
+              {
+                specialtyId: enhancement.specialtyId,
+                confidence: enhancement.confidence,
+                evidenceIds: allEvidence.map((item) => item.id),
+              },
+            ],
+            provenanceIds: ["chat-enhancement"],
+          }),
+        );
+        continueWith("recommendation", "I have enough to suggest a next step.");
+        return;
+      }
+
       const routing = await createSyntheticSpecialtyRouter().route({
-        evidence: routingEvidence,
+        evidence: allEvidence,
       });
       setRecommendation(recommendationFromRouting(routing));
       continueWith("recommendation", "I have enough to suggest a next step.");
@@ -437,6 +634,9 @@ export function ChatScheduler() {
   }
 
   function newConversation() {
+    enhancementGenerationRef.current += 1;
+    enhancementAbortRef.current?.abort();
+    enhancementAbortRef.current = null;
     setConversationId(`conversation-${Date.now()}`);
     setStage("intake");
     setMessages([
@@ -457,6 +657,8 @@ export function ChatScheduler() {
     setEmail("");
     setConfirmedAppointment(null);
     setConfirmationError("");
+    setEnhancementStatus("local");
+    setAnsweredQuestionTypes([]);
     setAnnouncement("New conversation started.");
   }
 
@@ -467,7 +669,29 @@ export function ChatScheduler() {
     setAnnouncement("Local demo data cleared and a new conversation started.");
   }
 
-  const composerEnabled = ["intake", "followup-one", "followup-two"].includes(stage);
+  const composerEnabled =
+    enhancementStatus !== "checking" &&
+    ["intake", "followup-one", "followup-two"].includes(stage);
+  const modeCopy =
+    enhancementStatus === "checking"
+      ? {
+          badge: "Checking assistant",
+          detail: "Local safety rules stay active",
+        }
+      : enhancementStatus === "error"
+        ? {
+            badge: "AI unavailable",
+            detail: "Required-mode configuration needs attention",
+          }
+        : enhancementStatus === "llm"
+          ? {
+              badge: "AI-assisted mode",
+              detail: "Local safety and fallback enabled",
+            }
+          : {
+              badge: "Local rules mode",
+              detail: "No model or CSV required",
+            };
   const formattedDate = slot
     ? new Intl.DateTimeFormat(undefined, {
         weekday: "long",
@@ -507,8 +731,8 @@ export function ChatScheduler() {
           <div className="transcript" ref={transcriptRef}>
             <div className="chat-column">
               <div className="mode-row">
-                <span className="mode-badge">Local rules mode</span>
-                <span>No model or CSV required</span>
+                <span className="mode-badge">{modeCopy.badge}</span>
+                <span>{modeCopy.detail}</span>
               </div>
 
               {messages.map((message) => (
@@ -880,7 +1104,9 @@ export function ChatScheduler() {
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   placeholder={
-                    composerEnabled
+                    enhancementStatus === "checking"
+                      ? "Checking your response…"
+                      : composerEnabled
                       ? "Describe what’s going on…"
                       : stage === "urgent"
                         ? "Routine scheduling is paused"

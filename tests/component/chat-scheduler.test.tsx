@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChatScheduler } from "@/components/chat-scheduler";
+import { syntheticFallbackResponse } from "@/lib/llm";
 
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 function send(text: string) {
@@ -14,14 +16,51 @@ function send(text: string) {
 }
 
 describe("chat scheduler prototype", () => {
+  it("completes a local conversation turn without calling the enhancement API", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ChatScheduler chatMode="local" />);
+
+    send("I have had an itchy rash for three days");
+
+    await screen.findAllByText(/When did (?:this start|these symptoms first begin)/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Local rules mode")).toBeInTheDocument();
+  });
+
+  it("surfaces provider failures when AI is required", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({ error: { code: "provider_unavailable" } }),
+      })),
+    );
+    render(<ChatScheduler chatMode="llm-required" />);
+
+    send("I have had an itchy rash for three days");
+
+    await screen.findAllByText(/AI enhancement is unavailable in required mode/);
+    expect(screen.getByText("AI unavailable")).toBeInTheDocument();
+  });
+
   it("completes the deterministic symptom-to-confirmation flow", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => syntheticFallbackResponse("No model token configured"),
+      })),
+    );
     const { container } = render(<ChatScheduler />);
 
     send("I have had an itchy rash for three days");
-    await screen.findAllByText(/When did this start/);
+    await screen.findAllByText(/When did (?:this start|these symptoms first begin)/);
 
     send("It started three days ago and is staying about the same");
-    await screen.findAllByText(/One more question/);
+    await screen.findAllByText(/One more question|other symptoms/i);
 
     send("No fever or injury, but the rash is itchy");
     await screen.findByRole("heading", { name: "Dermatology" });

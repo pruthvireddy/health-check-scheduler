@@ -17,7 +17,25 @@ The first release is a safe demonstration, not a diagnostic product or productio
 
 The deterministic conversation, document-processing, safety, scheduling, and confirmation modules form the complete application. The initial router uses a deliberately small synthetic fixture, so no production mapping dataset, CSV file, model credential, or external service is required to build and test the full workflow. Later, a CSV-backed router or pretrained-model router can replace the fixture without changing the conversation or scheduling layers.
 
-An optional LLM adapter may improve natural-language extraction and conversational wording, but conversation enhancement is separate from specialty routing. Neither an enhancement model nor a routing model can own emergency safety decisions, workflow state, scheduling, or appointment confirmation.
+An optional hosted LLM adapter may improve natural-language extraction, choose a curated follow-up question, and propose an allowlisted specialty. It is accessed through a small Vercel server function and remains subordinate to deterministic validation. Neither an enhancement model nor a future dedicated routing model can own emergency safety decisions, workflow state, scheduling, or appointment confirmation.
+
+### Current implementation status — July 24, 2026
+
+Implemented and verified:
+
+- Complete browser-local symptom, urgent-screening, follow-up, synthetic specialty-routing, scheduling, and confirmation flow.
+- Local context upload and review for TXT, Markdown, JSON, and CSV; PDF is currently rejected with a clear text-export alternative.
+- Optional Hugging Face conversation enhancement through the Vercel-compatible `/api/chat` route.
+- `local`, `hybrid`, and `llm-required` execution modes with a visible per-turn status.
+- Model request minimization, server-side validation, allowlists, confidence threshold, timeout, and deterministic fallback.
+- Automated contract, parser, API, safety, routing, scheduling, persistence, and component coverage.
+- Successful TypeScript check, automated test suite, production build, and no-token API smoke test.
+
+Still intentionally deferred:
+
+- Selecting and validating a production hosted model with a real provider token.
+- A medically reviewed CSV mapping pack or dedicated pretrained routing model.
+- Real clinic inventory, durable appointments, identity, notifications, compliance, and EHR/calendar integration.
 
 ## 2. Proposed Architecture
 
@@ -25,11 +43,11 @@ An optional LLM adapter may improve natural-language extraction and conversation
 
 - Next.js with the App Router and TypeScript.
 - React for the compact chat interface and inline scheduling widgets.
-- Tailwind CSS for responsive styling.
+- Lightweight global CSS for responsive styling without a UI framework dependency.
 - Zod schemas for API, triage, catalog, context evidence, routing results, optional CSV mappings, and appointment validation.
 - Vitest and React Testing Library for unit and component tests.
 - Playwright for the complete chat-to-confirmation flow.
-- An optional Vercel-compatible serverless route used only for conversation enhancement.
+- An optional Vercel-compatible `/api/chat` serverless route used only for bounded conversation enhancement.
 - Browser `localStorage` for conversations and appointments.
 - Browser IndexedDB for approved extracted context and, when enabled later, validated mapping packs.
 - Client-side parsing for CSV, text, Markdown, JSON, and PDF context files.
@@ -79,10 +97,10 @@ The synthetic adapters are the initial implementations and must support every st
 
 Conversation enhancement and specialty routing are two orthogonal configuration choices:
 
-- Conversation mode is `deterministic` by default or `enhanced` when the optional LLM wording/extraction adapter is enabled.
+- Conversation mode is `local` for browser-only behavior, `hybrid` for model enhancement with deterministic fallback, or `llm-required` for integration testing where provider failure is surfaced rather than hidden.
 - Routing backend is `synthetic` initially, with `csv` and `pretrained_model` reserved as interchangeable future implementations.
 
-The first coding milestone uses `deterministic + synthetic`. It must run when no CSV files, model packages, model endpoints, or model environment variables exist. Later routing decisions can change independently of conversation enhancement. Selected modes will be controlled by configuration and exposed as read-only diagnostic information in development builds.
+The default production-safe profile is `hybrid + synthetic`: it uses model enhancement only when server credentials are available and otherwise completes the identical workflow locally. Explicit `local + synthetic` mode makes no model request. Both profiles must run when no CSV files, routing-model artifacts, or browser-visible credentials exist. Later routing decisions can change independently of conversation enhancement. The interface exposes whether the latest turn used AI assistance or local rules.
 
 ### Runtime topology
 
@@ -104,14 +122,15 @@ Browser
              └──────── Optional enhanced mode
                               │
                               ▼
-                    Next.js /api/enhance route
+                    Next.js /api/chat route
                       ├─ Request validation
+                      ├─ Second deterministic urgent screen
                       ├─ Data-minimization gate
                       ├─ Timeout and schema enforcement
-                      └─ Optional LLM adapter
+                      └─ Hugging Face OpenAI-compatible adapter
 ```
 
-No database, authentication service, calendar service, email provider, or language-model provider is required for the MVP.
+No database, authentication service, calendar service, email provider, or language-model provider is required for the MVP. When hybrid mode is enabled, the only additional runtime dependency is an external model provider called from the server route; the browser never receives the provider token.
 
 ## 3. Conversation and Triage Design
 
@@ -358,29 +377,54 @@ This core must be usable directly from the browser application. It will expose f
 
 ### Optional model responsibilities
 
-When conversational enhanced mode is explicitly enabled and configured, the language model may:
+When `hybrid` or `llm-required` mode is configured, the language model may:
 
 - Summarize the user’s symptom description.
 - Select the most useful next question from an allowed set.
 - Map natural-language answers into structured fields.
-- Suggest a permitted specialist for comparison with the configured router, without replacing its validated result.
-- Generate short, empathetic conversational wording.
+- Suggest a permitted specialist for validation and comparison with the synthetic router.
+- Provide a short, non-diagnostic explanation.
 
-The deterministic result is computed before an enhancement request. The model response must conform to a validated structured schema containing:
+The browser runs urgent screening before an enhancement request, and the server repeats that screen before contacting the provider. The model response must conform to a validated structured schema containing:
 
-- Assistant message.
-- Normalized symptom facts.
-- Proposed next action.
-- Optional follow-up question identifier.
-- Optional allowed specialist identifier.
-- Confidence indicator.
-- Safety flags for secondary deterministic review.
+- Zero or more normalized symptom-fact proposals.
+- One proposed action: ask a follow-up, recommend a specialist, or request urgent review.
+- An optional question type from the curated follow-up allowlist.
+- An optional specialty identifier from the bundled allowlist.
+- A normalized confidence value from zero through one.
+- An optional short explanation with no diagnosis.
 
-Invalid, unsupported, or timed-out model results will be discarded, and the already-computed deterministic result will be returned unchanged. Model output is advisory: the deterministic safety and routing engine must validate every proposed fact, question, and specialist identifier before using it.
+Invalid, unsupported, low-confidence, or timed-out model results are discarded and the deterministic path continues without losing the transcript. Model output is advisory: the application validates every proposed fact, question type, and specialist identifier before use. The model cannot create free-form question categories, new specialties, availability, appointments, or confirmation codes.
+
+### Lightweight hosted-model implementation
+
+The first enhancement adapter uses the Vercel AI SDK with its OpenAI-compatible provider against the Hugging Face inference router. This keeps model weights and inference outside the Vercel deployment while keeping the application bundle compact.
+
+Server-only configuration:
+
+```text
+CHAT_MODE=hybrid
+HF_TOKEN=<server-only secret>
+HF_CHAT_MODEL=<OpenAI-compatible hosted model identifier>
+HF_BASE_URL=https://router.huggingface.co/v1
+LLM_TIMEOUT_MS=12000
+LLM_MAX_OUTPUT_TOKENS=300
+LLM_CONFIDENCE_THRESHOLD=0.70
+```
+
+The route sends at most eight recent user/assistant messages plus up to fifty approved, non-negated evidence items. Raw uploads, rejected extraction results, appointment details, and browser storage are never sent. Output length and duration are bounded to fit a short Vercel function request.
+
+`CHAT_MODE` behavior:
+
+- `local`: The browser skips `/api/chat` entirely; a direct API call also short-circuits without contacting Hugging Face.
+- `hybrid`: Use Hugging Face when configured, otherwise return a structured fallback signal and continue locally.
+- `llm-required`: Intended for integration validation; missing configuration or provider failure is returned as an unavailable response so deployment mistakes are visible.
+
+Normal automated tests mock the enhancement boundary and never contact a real provider. A live-provider smoke test is optional and must use a separately configured test token.
 
 ### Fully self-contained mode
 
-The initial `deterministic + synthetic` profile is a first-class deployment, not a degraded fallback. In this mode:
+The `local + synthetic` profile is a first-class deployment, not a degraded fallback. In this mode:
 
 - No chat or document content is sent to a server-side model route.
 - Keyword normalization, decision tables, file extraction, and the small synthetic router run in the browser.
@@ -498,7 +542,7 @@ type Recommendation = {
   evidenceIds: string[];
   catalogVersion: string;
   routingSource: {
-    backend: "synthetic" | "csv" | "pretrained_model";
+    backend: "synthetic" | "llm" | "csv" | "pretrained_model";
     version: string;
     provenanceIds: string[];
   };
@@ -535,7 +579,7 @@ type RoutingCandidate = {
 };
 
 type RoutingResult = {
-  backend: "synthetic" | "csv" | "pretrained_model";
+  backend: "synthetic" | "llm" | "csv" | "pretrained_model";
   version: string;
   candidates: RoutingCandidate[];
   provenanceIds: string[];
@@ -577,14 +621,14 @@ interface RoutingKnowledgeRepository {
 }
 
 interface SpecialtyRouter {
-  readonly backend: "synthetic" | "csv" | "pretrained_model";
+  readonly backend: "synthetic" | "llm" | "csv" | "pretrained_model";
   route(input: RoutingInput): Promise<RoutingResult>;
 }
 ```
 
 `SyntheticSpecialtyRouter` will be the only required router for the first coding milestone. `CsvSpecialtyRouter` and `PretrainedModelSpecialtyRouter` will be separate adapters added behind the same interface if and when those approaches are selected.
 
-The optional `/api/enhance` endpoint will accept only the validated, minimized enhancement input and return a schema-validated suggestion. The primary chat workflow will not depend on this endpoint and will never wait indefinitely for it.
+The optional `/api/chat` endpoint will accept only the validated, minimized enhancement input and return a schema-validated suggestion or fallback signal. The primary chat workflow will not depend on this endpoint and will never wait indefinitely for it.
 
 Appointment creation will remain client-side in the MVP because all catalog and persistence data are browser-local.
 
@@ -722,7 +766,7 @@ Conditional routing-adapter scenarios:
 4. Missing, timed-out, incompatible, or malformed model → routing falls back to the synthetic router.
 5. Switching the configured router does not change safety, conversation-state, scheduling, or confirmation behavior.
 
-Initial acceptance requires all initial-build scenarios to pass locally and in a Vercel preview with no CSV mapping file, routing-model artifact, model SDK, model endpoint, or model environment variable. Conditional scenarios become required only when their adapter is implemented.
+Initial acceptance requires all initial-build scenarios to pass locally and in a Vercel preview with no CSV mapping file, routing-model artifact, model endpoint, provider token, or model environment variable. The server-only AI SDK may remain installed but is not invoked in local mode. Conditional scenarios become required only when their adapter is implemented.
 
 ## 12. Delivery Phases
 
@@ -740,7 +784,7 @@ Initial acceptance requires all initial-build scenarios to pass locally and in a
 - Build the full rules-only conversational path.
 - Add inline scheduling controls and availability calculation.
 - Add browser persistence and confirmation generation.
-- Prove the full application flow with no CSV routing data, model artifact, model SDK, endpoint, key, or network request.
+- Prove the full application flow with no CSV routing data, model artifact, endpoint, key, or model network request.
 
 ### Phase 3 — Patient-context extensibility
 
@@ -796,6 +840,6 @@ Initial acceptance requires all initial-build scenarios to pass locally and in a
 - Routine scheduling stops when an emergency warning sign is detected.
 - One best-match specialist or subspecialist is shown, with primary care as the safe low-confidence fallback.
 - The scheduling interface remains embedded in the chatbot transcript.
-- The initial application works without a model package, artifact, endpoint, or key. A future conversation model may improve interpretation and wording; a separate future pretrained model may serve as the configured routing backend.
+- The application works without a model artifact, endpoint, or key. The server-only AI SDK is installed for optional hybrid enhancement but is not invoked in local mode; a separate future pretrained model may serve as the configured routing backend.
 - Vercel deployment is stateless and requires no managed database.
 - Real authentication, durable storage, EHR integration, notifications, audit logging, and compliance work are reserved for a future production phase.

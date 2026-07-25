@@ -25,7 +25,7 @@ export type SpecialtyId =
   | "orthopedics"
   | "ent";
 
-export type RoutingBackend = "synthetic" | "csv" | "pretrained_model";
+export type RoutingBackend = "synthetic" | "llm" | "csv" | "pretrained_model";
 
 export type SymptomEvidence = {
   id: string;
