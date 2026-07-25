@@ -383,6 +383,7 @@ When `hybrid` or `llm-required` mode is configured, the language model may:
 - Select the most useful next question from an allowed set.
 - Map natural-language answers into structured fields.
 - Suggest a permitted specialist for validation and comparison with the synthetic router.
+- Generate a brief, natural acknowledgement that is screened before display.
 - Provide a short, non-diagnostic explanation.
 
 The browser runs urgent screening before an enhancement request, and the server repeats that screen before contacting the provider. The model response must conform to a validated structured schema containing:

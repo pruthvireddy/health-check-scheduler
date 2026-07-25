@@ -45,6 +45,35 @@ describe("chat scheduler prototype", () => {
     expect(screen.getByText("AI unavailable")).toBeInTheDocument();
   });
 
+  it("uses validated model wording with an application-owned follow-up", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          mode: "llm",
+          modelVersion: "test/model",
+          extractedEvidence: [],
+          nextAction: "ask_follow_up",
+          questionType: "severity",
+          confidence: 0.91,
+          conversationalLead:
+            "That sounds uncomfortable, and the detail you shared is helpful.",
+          explanation: "A severity follow-up can clarify the scheduling route.",
+        }),
+      })),
+    );
+    render(<ChatScheduler chatMode="hybrid" />);
+
+    send("I have had an itchy rash for three days");
+
+    await screen.findAllByText(
+      /That sounds uncomfortable.*How severe are the symptoms/,
+    );
+    expect(screen.getByText("AI-assisted mode")).toBeInTheDocument();
+  });
+
   it("completes the deterministic symptom-to-confirmation flow", async () => {
     vi.stubGlobal(
       "fetch",

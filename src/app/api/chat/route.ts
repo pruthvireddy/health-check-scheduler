@@ -2,6 +2,7 @@ import { screenForUrgentRedFlags } from "@/lib/core/safety";
 import {
   getLlmEnhancementConfig,
   requestHuggingFaceEnhancement,
+  safeConversationalLead,
   validateModelDecision,
 } from "@/lib/adapters/llm";
 import {
@@ -148,6 +149,9 @@ export async function POST(request: Request): Promise<Response> {
 
     const response = chatEnhancementResponseSchema.parse({
       ...validation.decision,
+      conversationalLead: safeConversationalLead(
+        validation.decision.conversationalLead,
+      ),
       // Never render unrestricted model prose as clinical guidance.
       explanation: safeExplanation(validation.decision),
       mode: "llm",

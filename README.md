@@ -77,7 +77,7 @@ not contact a clinic.
 
 - Conversational symptom intake with bounded follow-up questions
 - Deterministic urgent-warning stop before routine scheduling
-- Optional, schema-validated LLM conversation enhancement
+- Optional, schema-validated LLM conversation enhancement with natural acknowledgements
 - Replaceable synthetic, future CSV, or pretrained-model routing adapters
 - Primary care fallback for unmatched concerns
 - Specialty-aware fictional locations, visit durations, and generated slots

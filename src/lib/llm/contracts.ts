@@ -68,6 +68,7 @@ export const modelDecisionSchema = z
     questionType: followUpQuestionTypeSchema.optional(),
     specialtyId: specialtyIdSchema.optional(),
     confidence: z.number().min(0).max(1),
+    conversationalLead: z.string().trim().min(1).max(180).optional(),
     explanation: z.string().trim().min(1).max(500).optional(),
   })
   .superRefine((decision, context) => {

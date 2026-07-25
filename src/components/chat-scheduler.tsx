@@ -459,9 +459,10 @@ export function ChatScheduler({
           ? enhancement.questionType
           : chooseUnansweredQuestion(answeredQuestionTypes, "onset");
       setAnsweredQuestionTypes((current) => [...current, questionType]);
+      const lead = enhancement?.conversationalLead ?? "Thanks.";
       continueWith(
         "followup-one",
-        `Thanks. ${followUpPromptFor(questionType)}`,
+        `${lead} ${followUpPromptFor(questionType)}`,
       );
       return;
     }
@@ -476,9 +477,11 @@ export function ChatScheduler({
               "associated_symptoms",
             );
       setAnsweredQuestionTypes((current) => [...current, questionType]);
+      const lead =
+        enhancement?.conversationalLead ?? "Thanks for clarifying.";
       continueWith(
         "followup-two",
-        `One more question: ${followUpPromptFor(questionType)}`,
+        `${lead} ${followUpPromptFor(questionType)}`,
       );
       return;
     }
@@ -516,7 +519,12 @@ export function ChatScheduler({
             provenanceIds: ["chat-enhancement"],
           }),
         );
-        continueWith("recommendation", "I have enough to suggest a next step.");
+        const lead =
+          enhancement.conversationalLead ?? "Thanks for the additional context.";
+        continueWith(
+          "recommendation",
+          `${lead} I have enough to suggest a next step.`,
+        );
         return;
       }
 
@@ -524,7 +532,13 @@ export function ChatScheduler({
         evidence: allEvidence,
       });
       setRecommendation(recommendationFromRouting(routing));
-      continueWith("recommendation", "I have enough to suggest a next step.");
+      const lead = enhancement?.conversationalLead;
+      continueWith(
+        "recommendation",
+        lead
+          ? `${lead} I have enough to suggest a next step.`
+          : "I have enough to suggest a next step.",
+      );
     } catch {
       const routing = await createSyntheticSpecialtyRouter().route({ evidence: [] });
       setRecommendation(recommendationFromRouting(routing));
