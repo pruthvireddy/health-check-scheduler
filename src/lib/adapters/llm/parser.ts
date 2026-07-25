@@ -79,6 +79,15 @@ export function validateModelDecisionValue(
 
   const decision = parsedDecision.data;
 
+  if (
+    decision.nextAction === "recommend_specialist" &&
+    decision.specialtyId &&
+    request.retrievedCandidates.length > 0 &&
+    !request.retrievedCandidates.some((candidate) => candidate.specialtyId === decision.specialtyId)
+  ) {
+    return { success: false, reason: "invalid_model_output" };
+  }
+
   // An uncertain model may still escalate a concern. It can never use a low
   // confidence value to suppress deterministic fallback or clear urgency.
   if (

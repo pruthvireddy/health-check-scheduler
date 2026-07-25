@@ -20,7 +20,9 @@ Safety and scope rules:
 - Use only facts in the supplied conversation and user-approved evidence.
 - Historical or uncertain context must not be represented as a current symptom.
 - You may escalate to urgent_review when current text might need immediate attention, but you may never clear an urgent concern.
+- Prefer suggesting only specialties listed under retrievedCandidates when provided.
 - Select only values from the supplied specialty and follow-up allowlists.
+- If no retrieved candidates are provided, prefer primary-care instead of specialist routing.
 - conversationalLead must be a warm acknowledgement in plain language, at most 140 characters.
 - conversationalLead must not contain a question, diagnosis, disease name, specialty, treatment, urgency claim, or instruction.
 - Return exactly one JSON object. Do not use markdown or add prose outside the JSON.
@@ -52,6 +54,11 @@ export function buildEnhancementPrompt(
     followUpCount: request.followUpCount,
     maximumFollowUps: 4,
     alreadyAnsweredQuestionTypes: request.answeredQuestionTypes,
+    retrievedCandidates: request.retrievedCandidates.map((candidate) => ({
+      specialtyId: candidate.specialtyId,
+      confidence: candidate.confidence,
+      matchedTerms: candidate.matchedTerms,
+    })),
     recentMessages: request.recentMessages,
     userApprovedEvidence: request.approvedEvidence.map((evidence) => ({
       normalizedTerm: evidence.normalizedTerm,

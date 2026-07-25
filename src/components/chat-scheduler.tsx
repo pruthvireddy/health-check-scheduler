@@ -12,10 +12,12 @@ import {
   type ConversationStage,
   type Recommendation,
   type SpecialtyId,
+  type RoutingCandidate,
+  type RoutingResult,
   type SymptomEvidence,
 } from "@/lib/core";
 import {
-  createSyntheticSpecialtyRouter,
+  createHybridSpecialtyRouter,
   getCompatibleLocations,
   getDefaultSpecialistForSpecialty,
   getSupportedDurations,
@@ -30,6 +32,7 @@ import {
   followUpPromptFor,
   type ChatEnhancementResponse,
   type FollowUpQuestionType,
+  type RetrievedSpecialtyCandidate,
 } from "@/lib/llm/contracts";
 import { requestChatEnhancement } from "@/lib/llm/client";
 import { browserPersistence } from "@/lib/persistence";
@@ -73,6 +76,13 @@ type EnhancementAttempt =
   | ChatEnhancementResponse
   | { requiredError: true }
   | null;
+
+const RETRIEVED_CARD_LIMIT = 4;
+const SPECIALTY_CARD_LIMIT = 4;
+
+type SpecialtyRecommendationCard = RoutingCandidate & {
+  rationale: string;
+};
 
 const MODEL_CONFIDENCE_THRESHOLD = 0.7;
 const FALLBACK_QUESTION_ORDER: FollowUpQuestionType[] = [
@@ -169,6 +179,26 @@ function mergeEvidence(...groups: SymptomEvidence[][]): SymptomEvidence[] {
   return [...unique.values()];
 }
 
+function scoreConfidenceLabel(confidence: number): string {
+  if (confidence >= 0.8) return "Very likely match";
+  if (confidence >= 0.65) return "Likely match";
+  return "Possible match";
+}
+
+function formatMatchedTerms(terms: string[] | undefined): string {
+  if (!terms?.length) return "symptom pattern review";
+  return terms.slice(0, 3).join(", ");
+}
+
+function buildSpecialtyCards(candidates: RoutingCandidate[]): SpecialtyRecommendationCard[] {
+  return candidates
+    .slice(0, SPECIALTY_CARD_LIMIT)
+    .map((candidate) => ({
+      ...candidate,
+      rationale: `${scoreConfidenceLabel(candidate.confidence)} · Matched: ${formatMatchedTerms(candidate.matchedTerms)}`,
+    }));
+}
+
 function chooseUnansweredQuestion(
   answered: FollowUpQuestionType[],
   preferred: FollowUpQuestionType,
@@ -197,6 +227,9 @@ export function ChatScheduler({
   const [evidence, setEvidence] = useState<SymptomEvidence[]>([]);
   const [contextFile, setContextFile] = useState<ReviewedContext | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [specialtyCards, setSpecialtyCards] = useState<SpecialtyRecommendationCard[]>([]);
+  const [activeRoutingResult, setActiveRoutingResult] =
+    useState<RoutingResult | null>(null);
   const [location, setLocation] = useState<ClinicLocation | null>(null);
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [date, setDate] = useState<DateChoice | null>(null);
@@ -342,6 +375,8 @@ export function ChatScheduler({
   async function tryEnhancement(
     currentText: string,
     currentStage: "intake" | "followup-one" | "followup-two",
+    evidenceForRouting: SymptomEvidence[],
+    routerCandidates: RoutingCandidate[],
   ): Promise<EnhancementAttempt> {
     if (chatMode === "local") {
       setEnhancementStatus("local");
@@ -356,9 +391,16 @@ export function ChatScheduler({
 
     try {
       const approvedEvidence = mergeEvidence(
-        evidence,
+        ...evidenceForRouting,
         approvedContextEvidence(contextFile),
       ).filter((item) => item.userApproved);
+      const retrievedCandidates = routerCandidates
+        .slice(0, RETRIEVED_CARD_LIMIT)
+        .map((candidate) => ({
+          specialtyId: candidate.specialtyId,
+          confidence: candidate.confidence,
+          matchedTerms: candidate.matchedTerms,
+        } satisfies RetrievedSpecialtyCandidate));
       const response = await requestChatEnhancement(
         {
           conversationId,
@@ -371,6 +413,7 @@ export function ChatScheduler({
             { role: "user" as const, content: currentText },
           ].slice(-8),
           approvedEvidence,
+          retrievedCandidates,
           answeredQuestionTypes,
           followUpCount:
             currentStage === "intake"
@@ -408,6 +451,41 @@ export function ChatScheduler({
     }
   }
 
+  const fallbackRoutingResult: RoutingResult = {
+    backend: "synthetic",
+    version: "2026.07-demo",
+    candidates: [
+      {
+        specialtyId: "primary-care",
+        confidence: 0.5,
+        evidenceIds: [],
+        matchedTerms: [],
+      },
+    ],
+    provenanceIds: ["fallback-routing"],
+  };
+
+  function recommendationForSpecialty(
+    candidate: RoutingCandidate,
+    routingResult: RoutingResult,
+  ): Recommendation {
+    return recommendationFromRouting({
+      ...routingResult,
+      candidates: [candidate],
+    });
+  }
+
+  async function routeFromEvidence(allEvidence: SymptomEvidence[]): Promise<RoutingResult> {
+    try {
+      const routing = await createHybridSpecialtyRouter().route({
+        evidence: allEvidence,
+      });
+      return routing;
+    } catch {
+      return fallbackRoutingResult;
+    }
+  }
+
   async function submitMessage(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
@@ -432,8 +510,30 @@ export function ChatScheduler({
     }
 
     const intakeStage = stage;
+    const routingEvidence = [
+      ...normalizeSymptomEvidence(combinedText, `${conversationId}-symptom`),
+      ...approvedContextEvidence(contextFile),
+    ];
+    const allEvidence = mergeEvidence(evidence, routingEvidence).filter(
+      (item) => item.userApproved,
+    );
+    setEvidence(allEvidence);
+
+    const routingResult = await routeFromEvidence(allEvidence);
+    const routingCandidates = routingResult.candidates.length
+      ? routingResult.candidates
+      : fallbackRoutingResult.candidates;
+
+    setSpecialtyCards(buildSpecialtyCards(routingCandidates));
+    setActiveRoutingResult(routingResult);
+
     const enhancementGeneration = ++enhancementGenerationRef.current;
-    const enhancement = await tryEnhancement(text, intakeStage);
+    const enhancement = await tryEnhancement(
+      text,
+      intakeStage,
+      allEvidence,
+      routingCandidates,
+    );
     if (enhancementGeneration !== enhancementGenerationRef.current) return;
     if (enhancement && "requiredError" in enhancement) {
       addMessage(
@@ -486,67 +586,48 @@ export function ChatScheduler({
       return;
     }
 
-    try {
-      const conversationEvidence = normalizeSymptomEvidence(
-        combinedText,
-        `${conversationId}-symptom`,
-      );
-      const routingEvidence = [
-        ...conversationEvidence,
-        ...approvedContextEvidence(contextFile),
-      ];
-      const allEvidence = mergeEvidence(evidence, routingEvidence).filter(
-        (item) => item.userApproved,
-      );
-      setEvidence(allEvidence);
+    const llmSuggested =
+      enhancement?.nextAction === "recommend_specialist" &&
+      enhancement.specialtyId &&
+      enhancement.confidence >= MODEL_CONFIDENCE_THRESHOLD;
 
-      if (
-        enhancement?.nextAction === "recommend_specialist" &&
-        enhancement.specialtyId &&
-        enhancement.confidence >= MODEL_CONFIDENCE_THRESHOLD
-      ) {
-        setRecommendation(
-          recommendationFromRouting({
-            backend: "llm",
-            version: enhancement.modelVersion ?? "hosted-chat-model",
-            candidates: [
-              {
-                specialtyId: enhancement.specialtyId,
-                confidence: enhancement.confidence,
-                evidenceIds: allEvidence.map((item) => item.id),
-              },
-            ],
-            provenanceIds: ["chat-enhancement"],
-          }),
-        );
-        const lead =
-          enhancement.conversationalLead ?? "Thanks for the additional context.";
-        continueWith(
-          "recommendation",
-          `${lead} I have enough to suggest a next step.`,
-        );
-        return;
-      }
+    const recommendedSpecialty = llmSuggested
+      ? routingCandidates.find((item) => item.specialtyId === enhancement.specialtyId)
+      : undefined;
 
-      const routing = await createSyntheticSpecialtyRouter().route({
-        evidence: allEvidence,
-      });
-      setRecommendation(recommendationFromRouting(routing));
-      const lead = enhancement?.conversationalLead;
-      continueWith(
-        "recommendation",
-        lead
-          ? `${lead} I have enough to suggest a next step.`
-          : "I have enough to suggest a next step.",
-      );
-    } catch {
-      const routing = await createSyntheticSpecialtyRouter().route({ evidence: [] });
-      setRecommendation(recommendationFromRouting(routing));
-      continueWith(
-        "recommendation",
-        "I couldn’t match that to the small demo catalog, so I’m suggesting a general starting point.",
-      );
-    }
+    const preferredCandidate: RoutingCandidate =
+      recommendedSpecialty ??
+      routingCandidates[0] ?? {
+        specialtyId: enhancement?.specialtyId ?? routingCandidates[0]?.specialtyId ?? "primary-care",
+        confidence: Math.max(0.5, enhancement?.confidence ?? 0.5),
+        evidenceIds: allEvidence.map((item) => item.id),
+        matchedTerms: [],
+      };
+
+    const orderedCards = llmSuggested
+      ? buildSpecialtyCards(
+          [
+            preferredCandidate,
+            ...routingCandidates.filter(
+              (candidate) => candidate.specialtyId !== preferredCandidate.specialtyId,
+            ),
+          ],
+        )
+      : buildSpecialtyCards(routingCandidates);
+    setSpecialtyCards(orderedCards);
+    setRecommendation(
+      recommendationForSpecialty(preferredCandidate, {
+        ...routingResult,
+        candidates: [preferredCandidate],
+      }),
+    );
+
+    const lead =
+      enhancement?.conversationalLead ?? "I have enough to suggest a next step.";
+    continueWith(
+      "recommendation",
+      `${lead} Choose one specialty to continue scheduling.`,
+    );
   }
 
   async function handleAttachment(event: ChangeEvent<HTMLInputElement>) {
@@ -607,6 +688,19 @@ export function ChatScheduler({
     setAnnouncement("Date selected. Choose an available time.");
   }
 
+  function pickSpecialtyCard(card: SpecialtyRecommendationCard) {
+    if (!activeRoutingResult) return;
+    setRecommendation(recommendationForSpecialty(card, {
+      ...activeRoutingResult,
+      candidates: [card],
+    }));
+    setSpecialtyCards([card]);
+    setStage("location");
+    setAnnouncement(
+      `${SPECIALTY_LABELS[card.specialtyId]} selected. Choose a location next.`,
+    );
+  }
+
   function confirm() {
     setConfirmationError("");
     if (!displayName.trim() || !location || !durationMinutes || !slot || !specialist) {
@@ -663,6 +757,8 @@ export function ChatScheduler({
     setEvidence([]);
     setContextFile(null);
     setRecommendation(null);
+    setSpecialtyCards([]);
+    setActiveRoutingResult(null);
     setLocation(null);
     setDurationMinutes(null);
     setDate(null);
@@ -818,8 +914,8 @@ export function ChatScheduler({
                 >
                   <div className="recommendation-title">
                     <div>
-                      <span className="card-eyebrow">Recommended next step</span>
-                      <h2>{specialtyLabel}</h2>
+                      <span className="card-eyebrow">Choose a specialist pathway</span>
+                      <h2>{recommendation.rationale}</h2>
                     </div>
                     <span className="tag">
                       {recommendation.confidence === "high"
@@ -830,20 +926,34 @@ export function ChatScheduler({
                     </span>
                   </div>
                   <p>
-                    {recommendation.rationale} This is a scheduling suggestion,
-                    not a diagnosis.
+                    Pick one option and then continue to schedule your demo
+                    appointment.
                   </p>
-                  <button
-                    className="primary-button"
-                    onClick={() => {
-                      setStage("location");
-                      setAnnouncement(
-                        "Recommendation accepted. Choose a location.",
-                      );
-                    }}
-                  >
-                    Find an appointment
-                  </button>
+                  <div className="choice-grid three">
+                    {specialtyCards.length ? (
+                      specialtyCards.map((card) => (
+                        <button
+                          key={`${card.specialtyId}-${card.confidence}-${card.matchedTerms.join(",")}`}
+                          className="choice"
+                          onClick={() => pickSpecialtyCard(card)}
+                        >
+                          <span className="tag">{scoreConfidenceLabel(card.confidence)}</span>
+                          <strong>{SPECIALTY_LABELS[card.specialtyId]}</strong>
+                          <small>{card.rationale}</small>
+                        </button>
+                      ))
+                    ) : (
+                      <p>No specialty match is available yet.</p>
+                    )}
+                  </div>
+                  {specialtyCards[0] ? (
+                    <button
+                      className="primary-button"
+                      onClick={() => pickSpecialtyCard(specialtyCards[0])}
+                    >
+                      Find an appointment
+                    </button>
+                  ) : null}
                 </section>
               )}
 

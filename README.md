@@ -20,6 +20,28 @@ pnpm dev
 
 Open `http://localhost:3000`.
 
+## Knowledge packs
+
+The hybrid router consumes a generated CSV-driven knowledge pack from:
+
+- `data/knowledge/processed/symptom-specialty/knowledge-pack.v1.json`
+- `data/knowledge/processed/symptom-specialty/manifest.v1.json`
+
+Generate or refresh the pack with:
+
+```bash
+pnpm knowledge:compile
+```
+
+The compiler reads:
+
+- `data/knowledge/raw/disease-symptom/Final_Augmented_dataset_Diseases_and_Symptoms.csv`
+- `data/knowledge/curated/disease-to-specialty.v1.csv`
+
+and writes/updates the processed pack files. If you omit the large raw CSV in
+this repo, keep the existing generated pack and use existing synthetic-only
+routing behavior.
+
 To enable optional LLM enhancement, copy `.env.example` to `.env.local`, choose
 a mode, and add a Hugging Face access token only when the selected mode needs
 one. Never commit `.env.local`.

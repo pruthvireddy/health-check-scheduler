@@ -58,6 +58,7 @@ const safeExplanation = (
     ChatEnhancementResponse,
     "nextAction" | "questionType" | "specialtyId"
   >,
+  request: { retrievedCandidates: Array<{ specialtyId: string; matchedTerms?: string[] }> },
 ): string => {
   if (response.nextAction === "urgent_review") {
     return "The assistant raised a possible urgent concern. Routine scheduling should stop for a safety review.";
@@ -68,11 +69,18 @@ const safeExplanation = (
     return `A follow-up about ${topic} can clarify the scheduling route.`;
   }
 
+  const candidate = request.retrievedCandidates.find(
+    (item) => item.specialtyId === response.specialtyId,
+  );
+  const terms = candidate?.matchedTerms?.length
+    ? ` matched terms: ${candidate.matchedTerms.slice(0, 3).join(", ")}`
+    : "";
+
   const specialty = (response.specialtyId ?? "primary-care").replaceAll(
     "-",
     " ",
   );
-  return `The reported symptom pattern can be routed to ${specialty} for scheduling. This is not a diagnosis.`;
+  return `The reported symptom pattern can be routed to ${specialty} for scheduling${terms}. This is not a diagnosis.`;
 };
 
 export async function POST(request: Request): Promise<Response> {
@@ -153,7 +161,9 @@ export async function POST(request: Request): Promise<Response> {
         validation.decision.conversationalLead,
       ),
       // Never render unrestricted model prose as clinical guidance.
-      explanation: safeExplanation(validation.decision),
+      explanation: safeExplanation(validation.decision, {
+        retrievedCandidates: input.retrievedCandidates,
+      }),
       mode: "llm",
       modelVersion: providerResult.model,
     });
