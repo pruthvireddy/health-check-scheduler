@@ -391,7 +391,7 @@ export function ChatScheduler({
 
     try {
       const approvedEvidence = mergeEvidence(
-        ...evidenceForRouting,
+        evidenceForRouting,
         approvedContextEvidence(contextFile),
       ).filter((item) => item.userApproved);
       const retrievedCandidates = routerCandidates
