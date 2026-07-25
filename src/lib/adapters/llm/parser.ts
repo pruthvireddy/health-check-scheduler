@@ -15,41 +15,64 @@ export type ModelDecisionValidation =
         | "low_confidence";
     };
 
-const extractJsonObject = (text: string): unknown => {
+const extractJsonObjects = (text: string): unknown[] => {
   const trimmed = text.trim();
+  const candidates: unknown[] = [];
 
   try {
-    return JSON.parse(trimmed);
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
+    candidates.push(JSON.parse(trimmed));
+  } catch {}
 
-    if (start < 0 || end <= start) {
-      throw new Error("No JSON object was returned.");
+  for (let start = 0; start < trimmed.length; start += 1) {
+    if (trimmed[start] !== "{") continue;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let end = start; end < trimmed.length; end += 1) {
+      const character = trimmed[end];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (character === "\\") {
+          escaped = true;
+        } else if (character === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (character === '"') {
+        inString = true;
+      } else if (character === "{") {
+        depth += 1;
+      } else if (character === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          try {
+            candidates.push(JSON.parse(trimmed.slice(start, end + 1)));
+          } catch {}
+          break;
+        }
+      }
     }
-
-    return JSON.parse(trimmed.slice(start, end + 1));
   }
+
+  return candidates;
 };
 
 /**
  * The model output remains an untrusted proposal until it passes both schema
  * validation and workflow invariants owned by the application.
  */
-export function validateModelDecision(
-  text: string,
+export function validateModelDecisionValue(
+  value: unknown,
   request: ParsedChatEnhancementRequest,
   confidenceThreshold: number,
 ): ModelDecisionValidation {
-  let parsedJson: unknown;
-
-  try {
-    parsedJson = extractJsonObject(text);
-  } catch {
-    return { success: false, reason: "invalid_model_output" };
-  }
-
-  const parsedDecision = modelDecisionSchema.safeParse(parsedJson);
+  const parsedDecision = modelDecisionSchema.safeParse(value);
   if (!parsedDecision.success) {
     return { success: false, reason: "invalid_model_output" };
   }
@@ -81,4 +104,25 @@ export function validateModelDecision(
   }
 
   return { success: true, decision };
+}
+
+export function validateModelDecision(
+  text: string,
+  request: ParsedChatEnhancementRequest,
+  confidenceThreshold: number,
+): ModelDecisionValidation {
+  const candidates = extractJsonObjects(text);
+
+  for (const candidate of candidates) {
+    const validation = validateModelDecisionValue(
+      candidate,
+      request,
+      confidenceThreshold,
+    );
+    if (validation.success || validation.reason !== "invalid_model_output") {
+      return validation;
+    }
+  }
+
+  return { success: false, reason: "invalid_model_output" };
 }

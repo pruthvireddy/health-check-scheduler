@@ -53,6 +53,22 @@ describe("untrusted model decision validation", () => {
     });
   });
 
+  it("finds a valid balanced JSON object after unrelated reasoning JSON", () => {
+    const result = validateModelDecision(
+      `Reasoning metadata: {"attempt":1}\nFinal:\n\`\`\`json\n${JSON.stringify(validDecision)}\n\`\`\``,
+      request(),
+      0.7,
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      decision: {
+        nextAction: "ask_follow_up",
+        questionType: "severity",
+      },
+    });
+  });
+
   it("rejects malformed provider output", () => {
     expect(validateModelDecision("not JSON", request(), 0.7)).toEqual({
       success: false,
