@@ -62,6 +62,7 @@ export type RoutingCandidate = {
   subspecialtyId?: string;
   confidence: number;
   evidenceIds: string[];
+  matchedTerms: string[];
 };
 
 export type RoutingResult = {

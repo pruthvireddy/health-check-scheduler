@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedBy": "health-check-scheduler-hybrid-v1",
+  "generatedAt": "2026-07-25T03:52:24.279117Z",
+  "packFile": "data/knowledge/processed/symptom-specialty/knowledge-pack.v1.json",
+  "totalRows": 246945,
+  "mappedRows": 10523,
+  "unmappedRows": 236422,
+  "symptomEntries": 76,
+  "specialties": 7,
+  "sourceChecksum": "8de90603ebada467fc2703db2ee4292856e52d64e94982ef926df22fa0c21320"
+}

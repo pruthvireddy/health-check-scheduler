@@ -11,6 +11,11 @@ const NAMES: Record<SpecialtyId, string> = {
   ent: "ear, nose, and throat care"
 };
 
+const evidencePreview = (evidenceTerms: string[] | undefined): string => {
+  if (!evidenceTerms?.length) return "no direct symptom terms were matched yet";
+  return evidenceTerms.slice(0, 2).join(", ");
+};
+
 /** Produces a scheduling recommendation only; it does not diagnose or rule out conditions. */
 export function recommendationFromRouting(result: RoutingResult): Recommendation {
   const best = result.candidates[0];
@@ -28,7 +33,7 @@ export function recommendationFromRouting(result: RoutingResult): Recommendation
   return {
     specialtyId: best.specialtyId,
     subspecialtyId: best.subspecialtyId,
-    rationale: `Based on the concerns you shared, ${NAMES[best.specialtyId]} may be a suitable place to start. This is a scheduling suggestion, not a diagnosis.`,
+    rationale: `Based on the concerns you shared (${evidencePreview(best.matchedTerms)}), ${NAMES[best.specialtyId]} may be a suitable place to start. This is a scheduling suggestion, not a diagnosis.`,
     confidence,
     evidenceIds: best.evidenceIds,
     catalogVersion: SYNTHETIC_CATALOG_VERSION,

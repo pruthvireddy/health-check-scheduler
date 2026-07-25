@@ -38,6 +38,12 @@ export const FOLLOW_UP_PROMPTS: Record<FollowUpQuestionType, string> = {
   current_status: "Are the symptoms happening right now?",
 };
 
+export const retrievedSpecialtySchema = z.object({
+  specialtyId: specialtyIdSchema,
+  confidence: z.number().min(0).max(1),
+  matchedTerms: z.array(z.string().trim().min(1).max(120)).max(4),
+});
+
 export const enhancementChatMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string().trim().min(1).max(2_000),
@@ -51,6 +57,7 @@ export const chatEnhancementRequestSchema = z.object({
     .array(symptomEvidenceSchema)
     .max(50)
     .transform((items) => items.filter((item) => item.userApproved && !item.negated)),
+  retrievedCandidates: z.array(retrievedSpecialtySchema).default([]),
   answeredQuestionTypes: z.array(followUpQuestionTypeSchema).max(4),
   followUpCount: z.number().int().min(0).max(4),
 });
@@ -101,6 +108,7 @@ export type FollowUpQuestionType = z.infer<typeof followUpQuestionTypeSchema>;
 export type EnhancementChatMessage = z.infer<typeof enhancementChatMessageSchema>;
 export type ChatEnhancementRequest = z.input<typeof chatEnhancementRequestSchema>;
 export type ParsedChatEnhancementRequest = z.output<typeof chatEnhancementRequestSchema>;
+export type RetrievedSpecialtyCandidate = z.infer<typeof retrievedSpecialtySchema>;
 export type ModelEvidenceProposal = z.infer<typeof modelEvidenceProposalSchema>;
 export type ModelDecision = z.infer<typeof modelDecisionSchema>;
 export type ChatEnhancementResponse = z.infer<typeof chatEnhancementResponseSchema>;

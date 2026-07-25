@@ -1,0 +1,87 @@
+disease,specialtyId,subspecialtyId,confidence,notes
+chest pain,cardiology,,0.92,Cardiac chest discomfort pathway
+angina,cardiology,,0.95,Cardiac ischemic symptom pattern
+myocardial infarction,cardiology,,0.99,Acute coronary syndrome risk
+tachycardia,cardiology,,0.9,Arrhythmia-related complaint
+bradycardia,cardiology,,0.9,Conduction-related complaint
+atrial fibrillation,cardiology,,0.95,Arrhythmia with symptom context
+palpitations,cardiology,,0.88,Awareness of heartbeat
+hypertension,cardiology,,0.75,Blood pressure-related concern
+arrhythmia,cardiology,,0.88,Irregular heartbeat pattern
+heart attack,cardiology,,0.97,Acute coronary risk symptom
+heart failure,cardiology,,0.84,Cardiac structural/functional concern
+chest tightness,cardiology,,0.86,Cardiac-related chest discomfort
+chest discomfort,cardiology,,0.82,Chest pathway triage
+skin rash,dermatology,,0.9,Initial skin symptom
+rash,dermatology,,0.9,Initial skin symptom
+eczema,dermatology,,0.88,Dermatologic presentation
+acne,dermatology,,0.88,Common dermatology concern
+psoriasis,dermatology,,0.86,Chronic skin inflammation
+urticaria,dermatology,,0.84,Itchy episodic skin lesions
+mole,dermatology,,0.74,Skin lesion workflow
+skin lesion,dermatology,,0.82,Pigmented/nonpigmented skin concern
+acne vulgaris,dermatology,,0.9,Acne pathway
+boils,dermatology,,0.8,Localized skin infection concern
+atopic dermatitis,dermatology,,0.88,Inflammatory skin disease
+contact dermatitis,dermatology,,0.86,Allergic skin reaction
+acne rosacea,dermatology,,0.82,Facial red rash pattern
+peeling skin,dermatology,,0.78,Barrier-type skin reaction
+acne scars,dermatology,,0.75,Dermatology cosmetic review
+nausea,gastroenterology,,0.78,Upper GI symptom pattern
+vomiting,gastroenterology,,0.8,Acute GI symptom pattern
+abdominal pain,gastroenterology,,0.9,Core GI symptom
+stomach pain,gastroenterology,,0.88,Core GI symptom
+heartburn,gastroenterology,,0.84,Reflux-related complaint
+reflux,gastroenterology,,0.84,Gastroesophageal complaint
+diarrhea,gastroenterology,,0.82,Lower GI symptom
+constipation,gastroenterology,,0.82,Lower GI symptom
+bloating,gastroenterology,,0.78,GI discomfort symptom
+gastritis,gastroenterology,,0.9,Upper GI inflammation
+irritable bowel syndrome,gastroenterology,,0.82,Functional bowel complaint
+peptic ulcer,gastroenterology,,0.88,Upper GI inflammatory pattern
+hepatitis,gastroenterology,,0.76,Liver-related GI pathway
+gastroesophageal reflux,gastroenterology,,0.9,Gastroesophageal pathway
+colitis,gastroenterology,,0.84,Colonic inflammation pathway
+appendicitis,gastroenterology,,0.9,Acute abdominal pathway
+migraine,neurology,,0.95,Primary headache concern
+headache,neurology,,0.85,Headache pathway
+severe headache,neurology,,0.92,High-intensity headache pathway
+seizure,neurology,,0.9,Neurologic event concern
+neuropathy,neurology,,0.82,Nerve symptom pathway
+numbness,neurology,,0.8,Neurologic sensation change
+tremor,neurology,,0.82,Movement-related neurologic concern
+dizziness,neurology,,0.78,Neurologic vertigo differential
+memory loss,neurology,,0.88,Cognitive concern
+syncope,neurology,,0.9,Transient loss of awareness pattern
+muscle weakness,neurology,,0.74,Neurologic motor concern
+joint pain,orthopedics,,0.88,Painful musculoskeletal concern
+back pain,orthopedics,,0.9,Spine/musculoskeletal pathway
+knee pain,orthopedics,,0.9,Joint complaint
+shoulder pain,orthopedics,,0.89,Sports/injury pathway
+elbow pain,orthopedics,,0.81,Joint/musculoskeletal complaint
+ankle pain,orthopedics,,0.82,Joint pain pathway
+hip pain,orthopedics,,0.82,Orthopedic musculoskeletal symptom
+arthralgia,orthopedics,,0.84,Joint pain and function concerns
+sports injury,orthopedics,,0.92,Mechanism-based routing
+sprain,orthopedics,,0.9,Injury-related care pathway
+fracture,orthopedics,,0.93,Injury and urgent orthopedics triage
+muscle strain,orthopedics,,0.88,Overuse or acute strain
+ear pain,ent,,0.9,ENT pain pathway
+sore throat,ent,,0.86,ENT upper airway pathway
+sinus pain,ent,,0.88,ENT sinus pathway
+nasal congestion,ent,,0.82,Upper airway symptom
+hearing loss,ent,,0.9,Audiology / ENT assessment
+tinnitus,ent,,0.84,ENT auditory concern
+hoarse voice,ent,,0.82,ENT laryngeal symptom
+otitis,ent,,0.9,ENT infection pattern
+ear infection,ent,,0.9,ENT pathway
+tonsillitis,ent,,0.86,ENT upper airway pathway
+runny nose,ent,,0.76,Upper respiratory symptom
+primary care,primary-care,,0.7,Generalist start
+fatigue,primary-care,,0.68,General medical concern
+fever,primary-care,,0.85,General infection symptom
+cough,primary-care,,0.84,General first-contact symptom
+general weakness,primary-care,,0.75,Generalized medical concern
+weight loss,primary-care,,0.8,Systemic assessment
+insomnia,primary-care,,0.76,Health maintenance and behavior
+anxiety,primary-care,,0.7,Mental health and primary assessment
