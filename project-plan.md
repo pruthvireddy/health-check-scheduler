@@ -8,14 +8,16 @@ Build a lightweight, self-contained chatbot web application that:
 2. Checks for urgent warning signs before routine scheduling.
 3. Optionally incorporates user-uploaded symptom-history material after showing the extracted context for review.
 4. Asks two to four relevant follow-up questions.
-5. Routes symptoms using a bundled symptom-to-specialty catalog that can be expanded with validated CSV mapping packs.
+5. Routes symptoms through a replaceable routing interface, using a small synthetic in-code catalog initially and allowing either validated CSV knowledge or a pretrained classifier later.
 6. Recommends one suitable specialist or subspecialist with a brief, evidence-linked explanation.
 7. Guides the user through location, duration, date, and time selection using controls embedded in the conversation.
 8. Creates a browser-local appointment with a confirmation code and summary.
 
 The first release is a safe demonstration, not a diagnostic product or production medical system. It will run locally and deploy as a single Vercel project without requiring a database.
 
-The deterministic conversation, document-processing, routing, safety, scheduling, and confirmation modules form the complete application. No LLM call, model credential, or external service is required. An optional LLM adapter may improve natural-language extraction and conversational wording, but it cannot own safety decisions, routing constraints, workflow state, or scheduling. Removing or disabling that adapter must leave the full application functional.
+The deterministic conversation, document-processing, safety, scheduling, and confirmation modules form the complete application. The initial router uses a deliberately small synthetic fixture, so no production mapping dataset, CSV file, model credential, or external service is required to build and test the full workflow. Later, a CSV-backed router or pretrained-model router can replace the fixture without changing the conversation or scheduling layers.
+
+An optional LLM adapter may improve natural-language extraction and conversational wording, but conversation enhancement is separate from specialty routing. Neither an enhancement model nor a routing model can own emergency safety decisions, workflow state, scheduling, or appointment confirmation.
 
 ## 2. Proposed Architecture
 
@@ -24,20 +26,20 @@ The deterministic conversation, document-processing, routing, safety, scheduling
 - Next.js with the App Router and TypeScript.
 - React for the compact chat interface and inline scheduling widgets.
 - Tailwind CSS for responsive styling.
-- Zod schemas for API, triage, catalog, context evidence, CSV mappings, and appointment validation.
+- Zod schemas for API, triage, catalog, context evidence, routing results, optional CSV mappings, and appointment validation.
 - Vitest and React Testing Library for unit and component tests.
 - Playwright for the complete chat-to-confirmation flow.
 - An optional Vercel-compatible serverless route used only for conversation enhancement.
 - Browser `localStorage` for conversations and appointments.
-- Browser IndexedDB for validated mapping packs and approved extracted context.
+- Browser IndexedDB for approved extracted context and, when enabled later, validated mapping packs.
 - Client-side parsing for CSV, text, Markdown, JSON, and PDF context files.
-- Static TypeScript or JSON fixtures for specialists, locations, routing rules, follow-up questions, and availability.
+- Small static TypeScript or JSON fixtures for synthetic symptom routing, specialists, locations, follow-up questions, and availability.
 
 The repository will contain three main architectural areas:
 
-- `app/`: Chat page, optional enhancement route, layout, and styling.
-- `components/`: Transcript, composer, upload and mapping-management surfaces, inline selection controls, recommendation, urgent-warning, and confirmation cards.
-- `lib/`: Framework-independent core modules, knowledge ingestion and validation, deterministic and optional LLM adapters, scheduling, seeded catalogs, and browser persistence.
+- `src/app/`: Chat page, optional enhancement route, layout, and styling.
+- `src/components/`: Transcript, composer, context upload, optional mapping management, inline selection controls, recommendation, urgent-warning, and confirmation cards.
+- `src/lib/`: Framework-independent core modules, replaceable routing adapters, optional knowledge ingestion, conversation enhancement, scheduling, seeded catalogs, and browser persistence.
 
 ### Modular design
 
@@ -63,19 +65,24 @@ Conversation application service
           │    ├─ Local PDF extractor
           │    └─ LLM-assisted extractor (optional)
           │
-          └─ RoutingKnowledgeRepository port
-               ├─ Bundled mapping catalog
-               └─ Validated browser-local CSV packs
+          ├─ RoutingKnowledgeRepository port
+               ├─ Synthetic fixture repository (initial)
+               └─ Validated browser-local CSV repository (optional)
+          │
+          └─ SpecialtyRouter port
+               ├─ Synthetic rules router (initial/default)
+               ├─ CSV rules router (future option)
+               └─ Pretrained-model router (future option)
 ```
 
-The deterministic adapters are the default implementations and must support every state in the end-to-end workflow. Optional adapters may add richer interpretation, but they return suggestions through the same validated interfaces and cannot add new workflow capabilities.
+The synthetic adapters are the initial implementations and must support every state in the end-to-end workflow. Optional routing adapters return the same validated result shape and cannot add new workflow capabilities or bypass safety policy.
 
-Two runtime modes will be supported:
+Conversation enhancement and specialty routing are two orthogonal configuration choices:
 
-- `deterministic` is the default. All chat decisions, context extraction, routing, and scheduling execute locally. The browser never calls a model endpoint.
-- `enhanced` runs the deterministic pipeline first, then may ask the server-side LLM adapter to improve extraction or phrasing. A timeout, invalid response, missing key, quota error, or disabled endpoint immediately returns the already-computed deterministic result.
+- Conversation mode is `deterministic` by default or `enhanced` when the optional LLM wording/extraction adapter is enabled.
+- Routing backend is `synthetic` initially, with `csv` and `pretrained_model` reserved as interchangeable future implementations.
 
-The selected mode will be controlled by configuration and exposed as a read-only indicator in the UI. Core code and tests must not require the enhanced adapter to be installed or configured.
+The first coding milestone uses `deterministic + synthetic`. It must run when no CSV files, model packages, model endpoints, or model environment variables exist. Later routing decisions can change independently of conversation enhancement. Selected modes will be controlled by configuration and exposed as read-only diagnostic information in development builds.
 
 ### Runtime topology
 
@@ -84,7 +91,10 @@ Browser
   ├─ Chat transcript and embedded scheduling controls
   ├─ Conversation state
   ├─ Local context extraction and review
-  ├─ Bundled and imported routing knowledge
+  ├─ Selected specialty router
+  │    ├─ Synthetic fixture (initial)
+  │    ├─ CSV knowledge (optional)
+  │    └─ Pretrained classifier (optional)
   ├─ Seeded schedule catalog
   ├─ Availability calculation
   └─ Local conversations and appointments
@@ -181,16 +191,21 @@ Uploaded historical material will not automatically trigger an emergency exit be
 
 ### Specialist routing
 
-The routing engine will support a curated catalog containing:
+The first coding milestone will use a deliberately small synthetic fixture containing:
 
 - Primary care.
 - Cardiology.
 - Dermatology.
-- Endocrinology.
 - Gastroenterology.
 - Neurology.
 - Orthopedics.
 - Otolaryngology/ENT.
+
+It will include only enough fictional symptom phrases, follow-up questions, and confidence weights to exercise common routes, ambiguity, urgent exits, the primary-care fallback, and the complete scheduling flow. This fixture is test data, not a medically validated knowledge base.
+
+The stable specialist allowlist and interfaces will permit later expansion to:
+
+- Endocrinology.
 - Pulmonology.
 - Allergy and immunology.
 - Urology.
@@ -214,17 +229,16 @@ Routing will score only allowlisted specialties. The engine will combine:
 
 - Current symptoms stated in the conversation.
 - User-approved facts extracted from uploaded historical material.
-- Bundled symptom-to-specialty mappings.
-- Active, validated CSV mapping packs.
 - Answers to deterministic follow-up questions.
+- A validated result from the configured specialty router.
 
-The safety policy always runs before scoring and cannot be replaced or weakened by an imported mapping. Bundled and imported mappings participate in the same scoring model. Higher evidence scores win; if scores tie, the bundled mapping wins. Conflicting or weak evidence produces a primary-care fallback rather than arbitrary tie-breaking.
+The synthetic router will use simple weighted rules stored in TypeScript or JSON. A future CSV router will use validated mapping rows, while a future pretrained-model router will use the same normalized evidence as model input. The safety policy always runs before routing and cannot be replaced or weakened by any backend. Conflicting, invalid, or low-confidence results produce a primary-care fallback.
 
-The output will be one best-match specialty or subspecialty and a concise reason that identifies the relevant user-provided facts without asserting a diagnosis. Low-confidence or unsupported cases will fall back to primary care rather than inventing a precise referral.
+Every backend must return the same output: ranked allowlisted candidates, normalized confidence, evidence references, source/version provenance, and no free-form diagnosis. The application selects one best-match specialty or subspecialty and generates a concise reason from user-provided facts. Low-confidence or unsupported cases fall back to primary care rather than inventing a precise referral.
 
-## 4. Context and Routing-Knowledge Uploads
+## 4. Context Uploads and Optional Routing Sources
 
-Uploads are divided into two explicit types because they have different trust, privacy, validation, and persistence rules.
+Patient context is an application feature. CSV mapping import and pretrained-model routing are optional future backends; neither is required for the initial build.
 
 ### Patient context upload
 
@@ -253,7 +267,7 @@ In enhanced mode, uploaded material will still be parsed locally first. The user
 
 ### Symptom-to-specialty CSV mapping packs
 
-A mapping-management drawer will allow a user or demo administrator to import additional routing knowledge as CSV. The import flow will provide a downloadable template, validation preview, activation control, pack status, and delete action.
+If CSV routing is selected later, a mapping-management drawer will allow a user or demo administrator to import additional routing knowledge. The import flow will provide a downloadable template, validation preview, activation control, pack status, and delete action. This functionality is not part of the first coding milestone.
 
 Each CSV row will use this schema:
 
@@ -293,6 +307,22 @@ Before activation, the importer will:
 
 Validated active packs will be stored in browser IndexedDB with a checksum, schema version, source filename, imported timestamp, and active status. Removing or disabling a pack immediately recalculates subsequent routing. Existing confirmed appointments remain unchanged.
 
+### Pretrained-model routing
+
+If model routing is selected later, a `PretrainedModelSpecialtyRouter` adapter will accept only normalized symptom evidence and return the standard routing result. The model may run in the browser when its format and size permit, or behind a server endpoint when necessary; that deployment choice can be made later without changing the core contract.
+
+The adapter must:
+
+- Publish a model identifier, version, supported specialty IDs, and input-schema version.
+- Return candidate specialty IDs from the existing allowlist with normalized confidence values.
+- Reject unknown classes, malformed output, incompatible versions, and non-finite scores.
+- Apply a configured confidence threshold and use primary care below that threshold.
+- Preserve enough input and model-version provenance to reproduce a demo recommendation.
+- Time out or fail closed to the synthetic router during development until the model backend is explicitly approved.
+- Remain subordinate to deterministic emergency screening and workflow rules.
+
+The pretrained routing model is separate from the optional conversational LLM. Either, both, or neither may be enabled.
+
 ### Knowledge precedence and provenance
 
 The routing engine will retain evidence provenance so a result can be reproduced and explained:
@@ -300,10 +330,10 @@ The routing engine will retain evidence provenance so a result can be reproduced
 1. Immutable emergency and workflow rules.
 2. Current facts directly stated and confirmed by the user.
 3. User-approved facts extracted from historical files.
-4. Bundled and active imported mapping evidence.
+4. The configured router’s validated result and source/version provenance.
 5. Primary-care fallback when confidence remains insufficient.
 
-Recommendations will record which bundled catalog version and imported pack checksums contributed to the result. The UI will explain that imported packs are unverified demo knowledge and provide a one-click path to disable them.
+Recommendations will record the selected backend, its version, and backend-specific provenance such as a synthetic fixture version, CSV pack checksums, or pretrained model version. When CSV packs are enabled, the UI will explain that they are unverified demo knowledge and provide a one-click path to disable them.
 
 ## 5. Deterministic Core and Optional Conversation Enhancement
 
@@ -315,9 +345,9 @@ Application code will exclusively own and fully implement:
 - Workflow state and valid transitions.
 - Natural-language normalization for the supported symptom vocabulary.
 - Local context extraction and fact review.
-- Mapping-pack parsing, validation, activation, and provenance.
+- Synthetic routing-fixture loading and provenance.
 - Specialist and subspecialist allowlists.
-- Specialist scoring and primary-care fallback.
+- Routing-result validation and primary-care fallback.
 - Maximum follow-up count.
 - Complete user-facing messages and question templates.
 - Scheduling constraints and availability.
@@ -328,12 +358,12 @@ This core must be usable directly from the browser application. It will expose f
 
 ### Optional model responsibilities
 
-When enhanced mode is explicitly enabled and configured, the language model may:
+When conversational enhanced mode is explicitly enabled and configured, the language model may:
 
 - Summarize the user’s symptom description.
 - Select the most useful next question from an allowed set.
 - Map natural-language answers into structured fields.
-- Propose a route from the permitted specialist catalog.
+- Suggest a permitted specialist for comparison with the configured router, without replacing its validated result.
 - Generate short, empathetic conversational wording.
 
 The deterministic result is computed before an enhancement request. The model response must conform to a validated structured schema containing:
@@ -350,14 +380,15 @@ Invalid, unsupported, or timed-out model results will be discarded, and the alre
 
 ### Fully self-contained mode
 
-Deterministic mode is a first-class deployment profile, not a degraded fallback. In this mode:
+The initial `deterministic + synthetic` profile is a first-class deployment, not a degraded fallback. In this mode:
 
 - No chat or document content is sent to a server-side model route.
-- Keyword normalization, decision tables, file extraction, and mappings run in the browser.
+- Keyword normalization, decision tables, file extraction, and the small synthetic router run in the browser.
 - Follow-up questions will come from specialty-specific templates.
-- Routing will use weighted symptom-to-specialty rules.
-- File uploads, mapping-pack imports, scheduling, persistence, and confirmation remain available.
-- The entire acceptance suite will run without any model environment variables.
+- Routing will use the versioned synthetic fixture and weighted rules.
+- Patient-context uploads, scheduling, persistence, and confirmation remain available.
+- CSV mapping import becomes available only when that optional adapter is implemented and enabled.
+- The initial acceptance suite will run with no CSV mapping files and no model environment variables.
 - The interface will unobtrusively indicate “Local rules mode.”
 
 Model credentials will be server-only environment variables and never included in the browser bundle.
@@ -466,7 +497,11 @@ type Recommendation = {
   confidence: "high" | "medium" | "fallback";
   evidenceIds: string[];
   catalogVersion: string;
-  mappingPackChecksums: string[];
+  routingSource: {
+    backend: "synthetic" | "csv" | "pretrained_model";
+    version: string;
+    provenanceIds: string[];
+  };
 };
 
 type SymptomEvidence = {
@@ -492,6 +527,20 @@ type SymptomSpecialtyMapping = {
   active: boolean;
 };
 
+type RoutingCandidate = {
+  specialtyId: string;
+  subspecialtyId?: string;
+  confidence: number;
+  evidenceIds: string[];
+};
+
+type RoutingResult = {
+  backend: "synthetic" | "csv" | "pretrained_model";
+  version: string;
+  candidates: RoutingCandidate[];
+  provenanceIds: string[];
+};
+
 type ChatAction =
   | { type: "ask_follow_up"; questionId: string }
   | { type: "review_context"; evidence: SymptomEvidence[] }
@@ -501,15 +550,15 @@ type ChatAction =
   | { type: "recoverable_error"; message: string };
 ```
 
-The local conversation application service will accept the current state, latest user event, approved evidence, and active routing knowledge. It will synchronously return:
+The conversation application service will accept the current state, latest user event, approved evidence, and selected router. It will return a promise so a later model-backed router can be introduced without changing callers; the initial synthetic implementation resolves locally and immediately.
 
 - A display-safe assistant message.
 - The next valid conversation stage.
 - A typed UI action.
 - Updated structured symptom facts.
 - Optional recommendation information.
-- Evidence and mapping provenance.
-- The active execution mode.
+- Evidence and routing-backend provenance.
+- The active conversation mode and routing backend.
 
 The replaceable module contracts will include:
 
@@ -523,10 +572,17 @@ interface ContextExtractor {
 }
 
 interface RoutingKnowledgeRepository {
-  getBundledMappings(): SymptomSpecialtyMapping[];
+  getSyntheticMappings(): SymptomSpecialtyMapping[];
   getActiveImportedMappings(): Promise<SymptomSpecialtyMapping[]>;
 }
+
+interface SpecialtyRouter {
+  readonly backend: "synthetic" | "csv" | "pretrained_model";
+  route(input: RoutingInput): Promise<RoutingResult>;
+}
 ```
+
+`SyntheticSpecialtyRouter` will be the only required router for the first coding milestone. `CsvSpecialtyRouter` and `PretrainedModelSpecialtyRouter` will be separate adapters added behind the same interface if and when those approaches are selected.
 
 The optional `/api/enhance` endpoint will accept only the validated, minimized enhancement input and return a schema-validated suggestion. The primary chat workflow will not depend on this endpoint and will never wait indefinitely for it.
 
@@ -541,8 +597,8 @@ The application will use a single responsive screen:
 - Compact assistant and user message bubbles.
 - Attachment control for symptom-history material.
 - Extracted-context review cards with source, temporality, edit, approve, and remove actions.
-- Mapping-pack manager with CSV template download, validation preview, activate/deactivate, and delete actions.
-- A visible “Local rules mode” or “Enhanced mode” indicator.
+- An optional mapping-pack manager, added only if CSV routing is selected later.
+- A development indicator for conversation mode and routing backend, such as “Local conversation · Synthetic router.”
 - Inline structured controls attached to assistant messages.
 - Sticky composer at the bottom.
 - Persistent non-diagnostic disclaimer near the beginning of the flow.
@@ -562,20 +618,20 @@ Use versioned browser-storage keys for:
 
 Use a versioned IndexedDB store for:
 
-- Validated mapping-pack metadata and normalized rows.
 - User-approved extracted context associated with a conversation.
-- Catalog and mapping checksums needed to reproduce a recommendation.
+- Routing-backend provenance needed to reproduce a recommendation.
+- Validated mapping-pack metadata and normalized rows only if CSV routing is enabled later.
 
 Persistence behavior will include:
 
 - Runtime schema validation when loading stored data.
 - Safe reset if stored data is corrupt or incompatible.
 - A visible “Clear demo data” action.
-- Separate controls to clear symptom context, mapping packs, appointments, or all local data.
+- Separate controls to clear symptom context, appointments, optional mapping packs, or all local data.
 - No persistence of raw uploaded file bytes.
 - No secrets or model credentials in local storage.
 - No full date of birth, insurance data, payment data, or medical record identifiers.
-- A notice explaining that symptom text, approved extracts, imported mappings, and appointments remain on the current browser.
+- A notice explaining that symptom text, approved extracts, optional imported mappings, and appointments remain on the current browser.
 
 In deterministic mode, user text and extracted context do not leave the browser. In enhanced mode, only the minimum approved summary required for the next step may be sent to the configured provider. Each context-review card will disclose whether its approved summary is eligible for enhancement, and users can keep it local.
 
@@ -583,6 +639,9 @@ In deterministic mode, user text and extracted context do not leave the browser.
 
 - Model timeout or API failure: Continue through deterministic mode without losing the transcript.
 - Invalid model output: Reject it and use rule-based output.
+- Missing CSV and missing routing-model assets: Start normally with the synthetic router.
+- Invalid or unavailable selected routing backend: Fall back to the synthetic router and expose the fallback in development diagnostics.
+- Pretrained-model timeout, incompatible version, unknown class, or invalid score: Reject the model result and use the synthetic router.
 - Unsupported, oversized, encrypted, image-only, or unreadable context file: Reject that file with an actionable explanation while preserving other selections.
 - Partial text-extraction failure: Show only successfully extracted text and require review before use.
 - Historical urgent phrase: Ask whether the symptom is current before applying emergency behavior.
@@ -607,10 +666,11 @@ In deterministic mode, user text and extracted context do not leave the browser.
 - Emergency phrase detection, including common wording variations.
 - Current-versus-historical red-flag handling for uploaded context.
 - Deterministic extraction of symptoms, negation, severity, duration, and temporality.
-- Specialty scoring, tie-breaking, confidence fallback, and allowlist enforcement.
-- Combined scoring from conversation facts, approved file evidence, bundled mappings, and imported mappings.
-- CSV quoted fields, header normalization, row validation, duplicate detection, schema versions, checksums, and pack activation.
-- Protection against unknown specialty identifiers, invalid placeholders, and executable content.
+- Synthetic specialty scoring, tie-breaking, confidence fallback, and allowlist enforcement.
+- The shared `SpecialtyRouter` contract and result validation.
+- Combined routing input from conversation facts, approved file evidence, and follow-up answers.
+- CSV parsing, schema, conflict, and security tests when the CSV adapter is implemented.
+- Model version, class allowlist, confidence, timeout, and malformed-output tests when the pretrained-model adapter is implemented.
 - Text, Markdown, JSON, CSV, and text-based PDF extraction limits.
 - Removal of a context source and recalculation of its derived evidence.
 - Maximum follow-up count.
@@ -626,7 +686,7 @@ In deterministic mode, user text and extracted context do not leave the browser.
 
 - Symptom entry and follow-up messages.
 - Attachment, extraction review, editing, approval, and removal.
-- Mapping-pack preview, error display, activation, deactivation, and deletion.
+- Mapping-pack preview and management tests only when the CSV adapter is implemented.
 - Execution-mode indicator and local-only context control.
 - Inline location, duration, date, and time controls.
 - Clearing dependent selections when an earlier choice changes.
@@ -637,25 +697,32 @@ In deterministic mode, user text and extracted context do not leave the browser.
 
 ### End-to-end scenarios
 
-1. Common symptom → follow-ups → specialist → completed booking.
-2. Specific symptom pattern → subspecialist → completed booking.
-3. User uploads historical notes → reviews extracted facts → receives an evidence-linked recommendation.
-4. Historical file mentions an urgent symptom → chatbot confirms whether it is current before emergency handling.
-5. Valid CSV pack adds a new symptom phrase → routing uses it and records pack provenance.
-6. Invalid or conflicting CSV pack → activation is blocked with actionable row-level errors.
-7. Mapping pack is disabled → subsequent routing returns to bundled behavior.
-8. Ambiguous symptoms → primary-care fallback.
-9. Emergency warning sign in current input → immediate routine-flow termination.
-10. No model dependency or credential in the build → complete upload, routing, scheduling, and confirmation experience.
-11. Enhancement request fails mid-conversation → deterministic result appears without losing state.
-12. No slots for chosen combination → successful alternate selection.
-13. Page refresh during scheduling → restored workflow and approved context.
-14. Confirmation → persisted appointment, knowledge provenance, and unique confirmation code.
-15. Locally conflicting appointment → unavailable slot excluded.
-16. Mobile viewport → usable chat, upload review, and scheduling controls.
-17. Corrupt browser storage → safe recovery without a blank or broken application.
+Initial-build scenarios:
 
-Acceptance requires all scenarios except the explicitly enhanced-mode failure scenario to pass with the LLM adapter disabled and no model environment variables. The complete suite must work locally and in a Vercel preview deployment.
+1. Repository contains no symptom-to-specialty CSV and no routing-model artifact → application starts with the synthetic router.
+2. Synthetic common symptom → follow-ups → specialist → completed booking.
+3. Synthetic specific symptom → subspecialist → completed booking.
+4. User uploads historical notes → reviews extracted facts → receives an evidence-linked synthetic recommendation.
+5. Historical file mentions an urgent symptom → chatbot confirms whether it is current before emergency handling.
+6. Ambiguous or unsupported symptoms → primary-care fallback.
+7. Emergency warning sign in current input → immediate routine-flow termination.
+8. No model dependency or credential → complete context, routing, scheduling, and confirmation experience.
+9. No slots for chosen combination → successful alternate selection.
+10. Page refresh during scheduling → restored workflow and approved context.
+11. Confirmation → persisted appointment, routing provenance, and unique confirmation code.
+12. Locally conflicting appointment → unavailable slot excluded.
+13. Mobile viewport → usable chat, upload review, and scheduling controls.
+14. Corrupt browser storage → safe recovery without a blank or broken application.
+
+Conditional routing-adapter scenarios:
+
+1. Valid CSV pack → CSV router produces a contract-valid result and records pack provenance.
+2. Invalid or conflicting CSV pack → activation is blocked with actionable row-level errors.
+3. Valid pretrained-model result → model router produces allowlisted candidates and model-version provenance.
+4. Missing, timed-out, incompatible, or malformed model → routing falls back to the synthetic router.
+5. Switching the configured router does not change safety, conversation-state, scheduling, or confirmation behavior.
+
+Initial acceptance requires all initial-build scenarios to pass locally and in a Vercel preview with no CSV mapping file, routing-model artifact, model SDK, model endpoint, or model environment variable. Conditional scenarios become required only when their adapter is implemented.
 
 ## 12. Delivery Phases
 
@@ -663,43 +730,48 @@ Acceptance requires all scenarios except the explicitly enhanced-mode failure sc
 
 - Initialize Next.js, TypeScript, styling, validation, and test tooling.
 - Establish domain types and the explicit conversation state machine.
-- Define the ports for conversation enhancement, context extraction, and routing knowledge.
+- Define the ports for conversation enhancement, context extraction, routing knowledge, and specialty routing.
 - Add the responsive single-screen chat shell.
-- Add seeded specialty, location, duration, and availability data.
+- Add a small versioned synthetic routing fixture plus fictional specialty, location, duration, and availability data.
 
 ### Phase 2 — Complete deterministic application
 
-- Implement symptom normalization, urgent screening, follow-up templates, and routing rules.
+- Implement symptom normalization, urgent screening, follow-up templates, and `SyntheticSpecialtyRouter`.
 - Build the full rules-only conversational path.
 - Add inline scheduling controls and availability calculation.
 - Add browser persistence and confirmation generation.
-- Prove the full application flow with no model SDK, endpoint, key, or network request.
+- Prove the full application flow with no CSV routing data, model artifact, model SDK, endpoint, key, or network request.
 
-### Phase 3 — Context and mapping extensibility
+### Phase 3 — Patient-context extensibility
 
 - Add local parsers and review UI for text, Markdown, JSON, CSV, and text-based PDF context.
 - Add evidence provenance, temporality confirmation, and context removal/recalculation.
-- Add the CSV mapping template, validator, preview, activation, and IndexedDB repository.
-- Integrate bundled and imported mapping evidence with deterministic routing.
 
-### Phase 4 — Optional model enhancement
+### Phase 4 — Optional routing backends
+
+- Decide whether the next routing source is CSV knowledge, a pretrained classifier, or both.
+- For CSV, add the mapping schema, template, validator, preview, activation, repository, and `CsvSpecialtyRouter`.
+- For a pretrained classifier, add model loading or endpoint integration, result validation, version provenance, thresholds, and `PretrainedModelSpecialtyRouter`.
+- Run the shared routing contract and fallback suite against each implemented adapter.
+
+### Phase 5 — Optional conversation enhancement
 
 - Add the server-side model adapter and structured response schema.
-- Constrain model decisions to the curated question and specialist catalogs.
+- Constrain conversational suggestions to the curated question and specialist catalogs.
 - Implement explicit context consent, minimization, timeout, validation, and deterministic fallback behavior.
 - Add minimal-context handling and secret-safe configuration.
 
-### Phase 5 — Safety and quality
+### Phase 6 — Safety and quality
 
 - Add disclaimers, urgent-exit behavior, accessibility refinements, and privacy messaging.
 - Complete unit, component, and end-to-end coverage.
 - Validate responsive behavior and keyboard-only operation.
 - Verify local production builds and Vercel serverless compatibility.
 
-### Phase 6 — Documentation and deployment
+### Phase 7 — Documentation and deployment
 
-- Document setup, optional environment variables, deterministic mode, upload limits, CSV schema, seeded data, limitations, and test commands.
-- Include an example valid mapping pack and examples that demonstrate common validation failures.
+- Document setup, optional environment variables, routing-backend selection, deterministic mode, upload limits, synthetic data, limitations, and test commands.
+- Document CSV schema and model metadata only for adapters that are actually implemented.
 - Add a sample environment file without secrets.
 - Create the system architecture Markdown document from this plan.
 - Deploy a Vercel preview and run the acceptance suite against it.
@@ -710,15 +782,20 @@ Acceptance requires all scenarios except the explicitly enhanced-mode failure sc
 - It will not be represented as HIPAA-compliant or suitable for real protected health information.
 - Users are anonymous; there are no accounts or cross-device records.
 - Deterministic local-rules mode is the default and is a complete product mode, not a reduced demo path.
+- The first implementation uses a small, versioned synthetic routing fixture and requires no symptom-to-specialty CSV.
+- The synthetic fixture exists to exercise application behavior and will not be represented as medically comprehensive or clinically validated.
+- CSV rules and pretrained-model routing are deferred, interchangeable adapters behind the same `SpecialtyRouter` contract.
+- The eventual routing backend may be CSV, a pretrained model, or both; choosing it later will not require rewriting conversation, safety, scheduling, or confirmation modules.
 - Uploading symptom context is optional; raw file bytes are processed in memory and never persisted.
 - Text, Markdown, JSON, CSV, and text-based PDF context are supported; OCR and image interpretation are outside the MVP.
-- Imported CSV mappings can enrich only the bundled specialist allowlist and cannot change safety rules.
+- If implemented, imported CSV mappings can enrich only the specialist allowlist and cannot change safety rules.
 - Imported mapping knowledge is browser-local, user-managed, and treated as unverified demo input.
+- If implemented, pretrained-model output is validated against the same specialist allowlist, confidence policy, and primary-care fallback.
 - All appointments, clinicians, locations, and availability are fictional demo data.
 - Confirmation creates a local demo reservation, not a booking in a real clinical system.
 - Routine scheduling stops when an emergency warning sign is detected.
 - One best-match specialist or subspecialist is shown, with primary care as the safe low-confidence fallback.
 - The scheduling interface remains embedded in the chatbot transcript.
-- The application works without a model package, endpoint, or key; a configured model only improves supported interpretation and wording.
+- The initial application works without a model package, artifact, endpoint, or key. A future conversation model may improve interpretation and wording; a separate future pretrained model may serve as the configured routing backend.
 - Vercel deployment is stateless and requires no managed database.
 - Real authentication, durable storage, EHR integration, notifications, audit logging, and compliance work are reserved for a future production phase.

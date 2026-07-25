@@ -1,0 +1,7 @@
+{
+  "locations": [
+    { "id": "downtown", "name": "Downtown Health Center", "address": "100 Market Street", "timezone": "America/New_York", "hours": { "1": { "start": "09:00", "end": "17:00" }, "2": { "start": "09:00", "end": "17:00" }, "3": { "start": "09:00", "end": "17:00" }, "4": { "start": "09:00", "end": "17:00" }, "5": { "start": "09:00", "end": "16:00" } }, "blackoutDates": [] },
+    { "id": "northside", "name": "Northside Clinic", "address": "42 Oak Avenue", "timezone": "America/New_York", "hours": { "1": { "start": "08:00", "end": "16:00" }, "2": { "start": "08:00", "end": "16:00" }, "3": { "start": "08:00", "end": "16:00" }, "4": { "start": "10:00", "end": "18:00" }, "5": { "start": "08:00", "end": "14:00" } }, "blackoutDates": [] },
+    { "id": "west-end", "name": "West End Medical Pavilion", "address": "8 River Road", "timezone": "America/New_York", "hours": { "1": { "start": "09:00", "end": "17:00" }, "2": { "start": "09:00", "end": "17:00" }, "3": { "start": "09:00", "end": "17:00" }, "4": { "start": "09:00", "end": "17:00" }, "5": { "start": "09:00", "end": "15:00" } }, "blackoutDates": [] }
+  ]
+}

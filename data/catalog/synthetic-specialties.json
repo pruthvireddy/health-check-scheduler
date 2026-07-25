@@ -1,0 +1,29 @@
+{
+  "specialists": [
+    { "id": "pcp-lee", "specialtyId": "primary-care", "name": "Dr. Avery Lee", "title": "Primary Care", "locationIds": ["downtown", "northside"], "durations": [20, 40] },
+    { "id": "cardio-patel", "specialtyId": "cardiology", "name": "Dr. Morgan Patel", "title": "Cardiology", "locationIds": ["downtown"], "durations": [40, 60] },
+    { "id": "derm-ross", "specialtyId": "dermatology", "name": "Dr. Jordan Ross", "title": "Dermatology", "locationIds": ["northside"], "durations": [20, 40] },
+    { "id": "gi-nguyen", "specialtyId": "gastroenterology", "name": "Dr. Casey Nguyen", "title": "Gastroenterology", "locationIds": ["downtown", "west-end"], "durations": [40, 60] },
+    { "id": "neuro-brooks", "specialtyId": "neurology", "subspecialtyId": "headache-neurology", "name": "Dr. Riley Brooks", "title": "Headache Neurology", "locationIds": ["downtown"], "durations": [40, 60] },
+    { "id": "ortho-rivera", "specialtyId": "orthopedics", "subspecialtyId": "sports-medicine", "name": "Dr. Cameron Rivera", "title": "Orthopedics & Sports Medicine", "locationIds": ["northside", "west-end"], "durations": [40, 60] },
+    { "id": "ent-chen", "specialtyId": "ent", "name": "Dr. Taylor Chen", "title": "Ear, Nose & Throat", "locationIds": ["west-end"], "durations": [20, 40] }
+  ],
+  "questions": [
+    { "id": "duration", "prompt": "How long has this been going on?" },
+    { "id": "severity", "prompt": "How severe is it, and is it getting worse?" },
+    { "id": "cardio-exertion", "specialtyId": "cardiology", "prompt": "Does it happen with exertion, and does it improve with rest?" },
+    { "id": "derm-change", "specialtyId": "dermatology", "prompt": "Has the skin change been growing, changing color, or bleeding?" },
+    { "id": "gi-pattern", "specialtyId": "gastroenterology", "prompt": "Is it related to meals or bowel movements?" },
+    { "id": "headache-pattern", "specialtyId": "neurology", "prompt": "Is this a new or recurring headache pattern, and what other symptoms occur with it?" },
+    { "id": "injury", "specialtyId": "orthopedics", "prompt": "Did this begin after an injury or activity, and can you bear weight or use the area?" },
+    { "id": "ent-duration", "specialtyId": "ent", "prompt": "Do you have congestion, hearing changes, sore throat, or symptoms lasting more than a week?" }
+  ],
+  "mappings": [
+    { "version": 1, "mappingId": "cardiac-chest", "symptomTerms": ["palpitations", "irregular heartbeat", "heart racing"], "specialtyId": "cardiology", "weight": 82, "followUpQuestionIds": ["duration", "cardio-exertion"], "exclusionTerms": [], "active": true },
+    { "version": 1, "mappingId": "derm-rash", "symptomTerms": ["rash", "itchy skin", "mole", "skin lesion", "eczema"], "specialtyId": "dermatology", "weight": 80, "followUpQuestionIds": ["duration", "derm-change"], "exclusionTerms": [], "active": true },
+    { "version": 1, "mappingId": "gi-digestive", "symptomTerms": ["abdominal pain", "stomach pain", "heartburn", "reflux", "bloating", "diarrhea", "constipation"], "specialtyId": "gastroenterology", "weight": 76, "followUpQuestionIds": ["duration", "gi-pattern"], "exclusionTerms": [], "active": true },
+    { "version": 1, "mappingId": "neuro-headache", "symptomTerms": ["headache", "migraine", "recurring headache"], "specialtyId": "neurology", "subspecialtyId": "headache-neurology", "weight": 78, "followUpQuestionIds": ["duration", "headache-pattern"], "exclusionTerms": [], "active": true },
+    { "version": 1, "mappingId": "ortho-injury", "symptomTerms": ["joint pain", "knee pain", "shoulder pain", "back pain", "sprain", "sports injury"], "specialtyId": "orthopedics", "subspecialtyId": "sports-medicine", "weight": 78, "followUpQuestionIds": ["duration", "injury"], "exclusionTerms": [], "active": true },
+    { "version": 1, "mappingId": "ent-upper", "symptomTerms": ["ear pain", "hearing loss", "sore throat", "sinus pain", "nasal congestion", "hoarse voice"], "specialtyId": "ent", "weight": 76, "followUpQuestionIds": ["duration", "ent-duration"], "exclusionTerms": [], "active": true }
+  ]
+}
