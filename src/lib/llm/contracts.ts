@@ -27,6 +27,14 @@ export const FOLLOW_UP_QUESTION_TYPES = [
 
 export const followUpQuestionTypeSchema = z.enum(FOLLOW_UP_QUESTION_TYPES);
 
+export const ENHANCEMENT_PURPOSES = [
+  "care_navigation",
+  "scheduling_transition",
+  "confirmation",
+] as const;
+
+export const enhancementPurposeSchema = z.enum(ENHANCEMENT_PURPOSES);
+
 export const FOLLOW_UP_PROMPTS: Record<FollowUpQuestionType, string> = {
   onset: "When did these symptoms first begin?",
   duration: "How long do the symptoms last when they occur?",
@@ -60,6 +68,8 @@ export const chatEnhancementRequestSchema = z.object({
   retrievedCandidates: z.array(retrievedSpecialtySchema).default([]),
   answeredQuestionTypes: z.array(followUpQuestionTypeSchema).max(4),
   followUpCount: z.number().int().min(0).max(4),
+  purpose: enhancementPurposeSchema.default("care_navigation"),
+  transitionContext: z.string().trim().min(1).max(500).optional(),
 });
 
 export const modelEvidenceProposalSchema = z.object({
@@ -71,7 +81,12 @@ export const modelEvidenceProposalSchema = z.object({
 export const modelDecisionSchema = z
   .object({
     extractedEvidence: z.array(modelEvidenceProposalSchema).max(12),
-    nextAction: z.enum(["ask_follow_up", "recommend_specialist", "urgent_review"]),
+    nextAction: z.enum([
+      "ask_follow_up",
+      "recommend_specialist",
+      "urgent_review",
+      "phase_transition",
+    ]),
     questionType: followUpQuestionTypeSchema.optional(),
     specialtyId: specialtyIdSchema.optional(),
     confidence: z.number().min(0).max(1),
@@ -105,6 +120,7 @@ export const chatEnhancementResponseSchema = modelDecisionSchema.and(
 );
 
 export type FollowUpQuestionType = z.infer<typeof followUpQuestionTypeSchema>;
+export type EnhancementPurpose = z.infer<typeof enhancementPurposeSchema>;
 export type EnhancementChatMessage = z.infer<typeof enhancementChatMessageSchema>;
 export type ChatEnhancementRequest = z.input<typeof chatEnhancementRequestSchema>;
 export type ParsedChatEnhancementRequest = z.output<typeof chatEnhancementRequestSchema>;

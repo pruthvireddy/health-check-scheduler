@@ -75,13 +75,14 @@ describe("chat scheduler prototype", () => {
   });
 
   it("completes the deterministic symptom-to-confirmation flow", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => syntheticFallbackResponse("No model token configured"),
+    }));
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => syntheticFallbackResponse("No model token configured"),
-      })),
+      fetchMock,
     );
     const { container } = render(<ChatScheduler />);
 
@@ -116,5 +117,12 @@ describe("chat scheduler prototype", () => {
     await screen.findByRole("heading", { name: /You’re all set, Demo User/ });
     expect(screen.getByText(/^HCS-[A-Z0-9]{6}$/)).toBeInTheDocument();
     expect(screen.getByText(/Nothing was sent to a clinic/)).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(9));
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    const confirmationRequest = JSON.parse(lastCall[1]?.body as string);
+    expect(confirmationRequest).toMatchObject({
+      stage: "confirmed",
+      purpose: "confirmation",
+    });
   });
 });

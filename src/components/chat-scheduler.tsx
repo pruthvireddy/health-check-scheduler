@@ -240,6 +240,7 @@ export function ChatScheduler({
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [announcement, setAnnouncement] = useState("");
   const [confirmationError, setConfirmationError] = useState("");
+  const [isConfirming, setIsConfirming] = useState(false);
   const [enhancementStatus, setEnhancementStatus] =
     useState<EnhancementStatus>("local");
   const [answeredQuestionTypes, setAnsweredQuestionTypes] = useState<
@@ -435,6 +436,11 @@ export function ChatScheduler({
           retrievedCandidates: candidatePayload(candidates),
           answeredQuestionTypes,
           followUpCount: 4,
+          purpose:
+            nextStage === "confirmed"
+              ? "confirmation"
+              : "scheduling_transition",
+          transitionContext: triggerText,
         },
         controller.signal,
       );
@@ -525,6 +531,7 @@ export function ChatScheduler({
               : currentStage === "followup-one"
                 ? 1
                 : 2,
+          purpose: "care_navigation",
         },
         controller.signal,
       );
@@ -833,7 +840,8 @@ export function ChatScheduler({
     );
   }
 
-  function confirm() {
+  async function confirm() {
+    if (isConfirming) return;
     setConfirmationError("");
     if (!displayName.trim() || !location || !durationMinutes || !slot || !specialist) {
       setConfirmationError("Complete the appointment details before confirming.");
@@ -844,6 +852,7 @@ export function ChatScheduler({
       return;
     }
     try {
+      setIsConfirming(true);
       const appointment = createAppointment(
         {
           conversationId,
@@ -860,9 +869,11 @@ export function ChatScheduler({
       browserPersistence.saveAppointment(appointment);
       setAppointments((current) => [appointment, ...current]);
       setConfirmedAppointment(appointment);
-      setStage("confirmed");
-      setAnnouncement(
-        `Appointment confirmed. Your code is ${appointment.confirmationCode}.`,
+      await transitionWithLlmLead(
+        "confirmed",
+        `Your local demo reservation is confirmed. Your code is ${appointment.confirmationCode}.`,
+        "The user completed a local demo reservation. Do not include personal data, appointment details, or a confirmation code.",
+        fallbackRoutingCandidates(),
       );
     } catch (error) {
       setConfirmationError(
@@ -870,6 +881,8 @@ export function ChatScheduler({
           ? error.message
           : "The appointment could not be confirmed.",
       );
+    } finally {
+      setIsConfirming(false);
     }
   }
 
@@ -899,6 +912,7 @@ export function ChatScheduler({
     setEmail("");
     setConfirmedAppointment(null);
     setConfirmationError("");
+    setIsConfirming(false);
     setEnhancementStatus("local");
     setAnsweredQuestionTypes([]);
     setAnnouncement("New conversation started.");
@@ -1270,10 +1284,10 @@ export function ChatScheduler({
                   <div className="inline-actions">
                     <button
                       className="primary-button"
-                      disabled={!displayName.trim()}
+                      disabled={!displayName.trim() || isConfirming}
                       onClick={confirm}
                     >
-                      Confirm appointment
+                      {isConfirming ? "Confirming…" : "Confirm appointment"}
                     </button>
                     <button
                       className="secondary-button"

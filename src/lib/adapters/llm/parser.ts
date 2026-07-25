@@ -79,6 +79,25 @@ export function validateModelDecisionValue(
 
   const decision = parsedDecision.data;
 
+  const isPhaseCopyRequest = request.purpose !== "care_navigation";
+
+  if (
+    (isPhaseCopyRequest && decision.nextAction !== "phase_transition") ||
+    (!isPhaseCopyRequest && decision.nextAction === "phase_transition")
+  ) {
+    return { success: false, reason: "invalid_model_output" };
+  }
+
+  if (
+    decision.nextAction === "phase_transition" &&
+    (decision.extractedEvidence.length > 0 ||
+      decision.questionType ||
+      decision.specialtyId ||
+      !decision.conversationalLead)
+  ) {
+    return { success: false, reason: "invalid_model_output" };
+  }
+
   const isFollowUpStage =
     request.stage === "collecting_symptoms" || request.stage === "asking_follow_ups";
 
@@ -93,7 +112,7 @@ export function validateModelDecisionValue(
 
   if (
     decision.nextAction === "ask_follow_up" &&
-    !isFollowUpStage
+    (!isFollowUpStage || isPhaseCopyRequest)
   ) {
     return { success: false, reason: "invalid_model_output" };
   }

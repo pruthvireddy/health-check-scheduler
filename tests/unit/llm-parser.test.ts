@@ -113,4 +113,49 @@ describe("untrusted model decision validation", () => {
       ),
     ).toEqual({ success: false, reason: "follow_up_limit_reached" });
   });
+
+  it("accepts the constrained phase-copy action for scheduling transitions", () => {
+    const phaseRequest = chatEnhancementRequestSchema.parse({
+      conversationId: "conversation-1",
+      stage: "selecting_date",
+      recentMessages: [{ role: "user", content: "I selected a 20-minute visit" }],
+      approvedEvidence: [],
+      retrievedCandidates: [],
+      answeredQuestionTypes: [],
+      followUpCount: 4,
+      purpose: "scheduling_transition",
+      transitionContext: "The user selected a 20-minute visit.",
+    });
+    const result = validateModelDecision(
+      JSON.stringify({
+        extractedEvidence: [],
+        nextAction: "phase_transition",
+        confidence: 1,
+        conversationalLead: "That selection is saved.",
+        explanation: "The application can show the next scheduling step.",
+      }),
+      phaseRequest,
+      0.7,
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      decision: { nextAction: "phase_transition" },
+    });
+  });
+
+  it("rejects phase-copy output for a clinical navigation request", () => {
+    expect(
+      validateModelDecision(
+        JSON.stringify({
+          extractedEvidence: [],
+          nextAction: "phase_transition",
+          confidence: 1,
+          explanation: "The application can show the next step.",
+        }),
+        request(),
+        0.7,
+      ),
+    ).toEqual({ success: false, reason: "invalid_model_output" });
+  });
 });

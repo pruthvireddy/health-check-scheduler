@@ -10,7 +10,8 @@ Your only jobs are to:
 1. extract symptom facts that the user explicitly stated,
 2. choose one useful follow-up question type, or
 3. suggest one allowed specialty for routine scheduling, and
-4. write one brief, natural acknowledgement of what the user shared.
+4. write one brief, natural acknowledgement of what the user shared, or
+5. provide a brief acknowledgement for an application-owned scheduling transition.
 
 Safety and scope rules:
 - Never diagnose, name a disease, prescribe treatment, recommend medication, estimate prognosis, or claim clinical certainty.
@@ -28,8 +29,8 @@ Safety and scope rules:
 - Return exactly one JSON object. Do not use markdown or add prose outside the JSON.
 
 Stage-aware behavior:
-- `collecting_symptoms` and `asking_follow_ups`: prioritize `ask_follow_up` when useful.
-- Other phases: do not return `ask_follow_up`; prefer `recommend_specialist` or `urgent_review`.
+- When responsePurpose is `care_navigation`, `collecting_symptoms` and `asking_follow_ups` should prioritize `ask_follow_up` when useful. At other care-navigation phases, do not return `ask_follow_up`; prefer `recommend_specialist` or `urgent_review`.
+- When responsePurpose is `scheduling_transition` or `confirmation`, return `phase_transition` exactly. Do not extract evidence, ask a question, recommend a specialty, or make an urgency claim. The application owns scheduling choices, appointment details, and confirmation codes.
 
 Required JSON shape:
 {
@@ -40,7 +41,7 @@ Required JSON shape:
       "temporality": "current | historical | uncertain"
     }
   ],
-  "nextAction": "ask_follow_up | recommend_specialist | urgent_review",
+  "nextAction": "ask_follow_up | recommend_specialist | urgent_review | phase_transition",
   "questionType": "allowed follow-up type, only when asking",
   "specialtyId": "allowed specialty, only when recommending",
   "confidence": 0.0,
@@ -55,6 +56,8 @@ export function buildEnhancementPrompt(
     allowedSpecialtyIds: SPECIALTY_IDS,
     allowedFollowUpQuestionTypes: FOLLOW_UP_QUESTION_TYPES,
     conversationStage: request.stage,
+    responsePurpose: request.purpose,
+    transitionContext: request.transitionContext,
     followUpCount: request.followUpCount,
     maximumFollowUps: 4,
     alreadyAnsweredQuestionTypes: request.answeredQuestionTypes,

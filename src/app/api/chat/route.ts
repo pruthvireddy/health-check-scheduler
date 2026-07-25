@@ -58,7 +58,10 @@ const safeExplanation = (
     ChatEnhancementResponse,
     "nextAction" | "questionType" | "specialtyId"
   >,
-  request: { retrievedCandidates: Array<{ specialtyId: string; matchedTerms?: string[] }> },
+  request: Pick<
+    ParsedChatEnhancementRequest,
+    "purpose" | "retrievedCandidates"
+  >,
 ): string => {
   if (response.nextAction === "urgent_review") {
     return "The assistant raised a possible urgent concern. Routine scheduling should stop for a safety review.";
@@ -67,6 +70,12 @@ const safeExplanation = (
   if (response.nextAction === "ask_follow_up") {
     const topic = (response.questionType ?? "symptoms").replaceAll("_", " ");
     return `A follow-up about ${topic} can clarify the scheduling route.`;
+  }
+
+  if (response.nextAction === "phase_transition") {
+    return request.purpose === "confirmation"
+      ? "The application has completed the local demo reservation."
+      : "The application has recorded the scheduling selection and is ready for the next step.";
   }
 
   const candidate = request.retrievedCandidates.find(
@@ -162,6 +171,7 @@ export async function POST(request: Request): Promise<Response> {
       ),
       // Never render unrestricted model prose as clinical guidance.
       explanation: safeExplanation(validation.decision, {
+        purpose: input.purpose,
         retrievedCandidates: input.retrievedCandidates,
       }),
       mode: "llm",
