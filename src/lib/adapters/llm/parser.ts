@@ -79,6 +79,9 @@ export function validateModelDecisionValue(
 
   const decision = parsedDecision.data;
 
+  const isFollowUpStage =
+    request.stage === "collecting_symptoms" || request.stage === "asking_follow_ups";
+
   if (
     decision.nextAction === "recommend_specialist" &&
     decision.specialtyId &&
@@ -88,10 +91,15 @@ export function validateModelDecisionValue(
     return { success: false, reason: "invalid_model_output" };
   }
 
-  // An uncertain model may still escalate a concern. It can never use a low
-  // confidence value to suppress deterministic fallback or clear urgency.
   if (
-    decision.nextAction !== "urgent_review" &&
+    decision.nextAction === "ask_follow_up" &&
+    !isFollowUpStage
+  ) {
+    return { success: false, reason: "invalid_model_output" };
+  }
+
+  if (
+    decision.nextAction === "recommend_specialist" &&
     decision.confidence < confidenceThreshold
   ) {
     return { success: false, reason: "low_confidence" };

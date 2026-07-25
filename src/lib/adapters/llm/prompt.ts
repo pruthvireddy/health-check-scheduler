@@ -27,6 +27,10 @@ Safety and scope rules:
 - conversationalLead must not contain a question, diagnosis, disease name, specialty, treatment, urgency claim, or instruction.
 - Return exactly one JSON object. Do not use markdown or add prose outside the JSON.
 
+Stage-aware behavior:
+- `collecting_symptoms` and `asking_follow_ups`: prioritize `ask_follow_up` when useful.
+- Other phases: do not return `ask_follow_up`; prefer `recommend_specialist` or `urgent_review`.
+
 Required JSON shape:
 {
   "extractedEvidence": [

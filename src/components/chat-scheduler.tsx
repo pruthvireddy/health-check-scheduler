@@ -372,6 +372,110 @@ export function ChatScheduler({
     setAnnouncement(assistantText);
   };
 
+  function getEvidenceForModel(): SymptomEvidence[] {
+    return mergeEvidence(evidence, approvedContextEvidence(contextFile)).filter(
+      (item) => item.userApproved,
+    );
+  }
+
+  function candidatePayload(candidates: RoutingCandidate[]): RetrievedSpecialtyCandidate[] {
+    return candidates
+      .slice(0, RETRIEVED_CARD_LIMIT)
+      .map((candidate) => ({
+        specialtyId: candidate.specialtyId,
+        confidence: candidate.confidence,
+        matchedTerms: candidate.matchedTerms,
+      } satisfies RetrievedSpecialtyCandidate));
+  }
+
+  function fallbackRoutingCandidates(): RoutingCandidate[] {
+    if (activeRoutingResult?.candidates?.length) {
+      return activeRoutingResult.candidates;
+    }
+
+    return [
+      {
+        specialtyId,
+        confidence: 0.5,
+        evidenceIds: evidence.map((evidenceItem) => evidenceItem.id),
+        matchedTerms: evidenceTerms,
+      },
+    ];
+  }
+
+  async function requestPhaseLead(
+    nextStage: Stage,
+    triggerText: string,
+    candidates: RoutingCandidate[],
+    fallbackText: string,
+  ): Promise<string> {
+    if (chatMode === "local") {
+      return fallbackText;
+    }
+
+    enhancementAbortRef.current?.abort();
+    const controller = new AbortController();
+    enhancementAbortRef.current = controller;
+    setEnhancementStatus("checking");
+    setAnnouncement("Crafting next conversational step.");
+
+    try {
+      const response = await requestChatEnhancement(
+        {
+          conversationId,
+          stage: STAGE_MAP[nextStage],
+          recentMessages: [
+            ...messages.map((message) => ({
+              role: message.role,
+              content: message.text,
+            })),
+            { role: "user" as const, content: triggerText },
+          ].slice(-8),
+          approvedEvidence: getEvidenceForModel(),
+          retrievedCandidates: candidatePayload(candidates),
+          answeredQuestionTypes,
+          followUpCount: 4,
+        },
+        controller.signal,
+      );
+
+      if (controller.signal.aborted) return fallbackText;
+      if (response.mode !== "llm" || !response.conversationalLead) {
+        setEnhancementStatus(response.mode === "llm" ? "llm" : "local");
+        return fallbackText;
+      }
+
+      setEnhancementStatus("llm");
+      return response.conversationalLead;
+    } catch {
+      if (!controller.signal.aborted && chatMode === "llm-required") {
+        setEnhancementStatus("error");
+      } else if (!controller.signal.aborted) {
+        setEnhancementStatus("local");
+      }
+      return fallbackText;
+    } finally {
+      if (enhancementAbortRef.current === controller) {
+        enhancementAbortRef.current = null;
+      }
+    }
+  }
+
+  async function transitionWithLlmLead(
+    nextStage: Stage,
+    fallbackText: string,
+    triggerText: string,
+    candidates: RoutingCandidate[],
+  ) {
+    const assistantText = await requestPhaseLead(
+      nextStage,
+      triggerText,
+      candidates,
+      fallbackText,
+    );
+    continueWith(nextStage, assistantText);
+  }
+
   async function tryEnhancement(
     currentText: string,
     currentStage: "intake" | "followup-one" | "followup-two",
@@ -664,40 +768,68 @@ export function ChatScheduler({
     setAnnouncement("Context removed.");
   }
 
-  function selectLocation(item: ClinicLocation) {
+  async function selectLocation(item: ClinicLocation) {
     setLocation(item);
     setDurationMinutes(null);
     setDate(null);
     setSlot(null);
-    setStage("duration");
-    setAnnouncement("Location selected. Choose appointment duration.");
+
+    await transitionWithLlmLead(
+      "duration",
+      `${item.name} selected. Choose appointment duration next.`,
+      `User selected ${item.name} for ${specialtyLabel} scheduling.`,
+      fallbackRoutingCandidates(),
+    );
   }
 
-  function selectDuration(item: number) {
+  async function selectDuration(item: number) {
     setDurationMinutes(item);
     setDate(null);
     setSlot(null);
-    setStage("date");
-    setAnnouncement("Duration selected. Choose a date.");
+
+    await transitionWithLlmLead(
+      "date",
+      `Duration set to ${item} minutes. Choose a date next.`,
+      `The patient selected a ${item}-minute appointment.`,
+      fallbackRoutingCandidates(),
+    );
   }
 
-  function selectDate(item: DateChoice) {
+  async function selectDate(item: DateChoice) {
     setDate(item);
     setSlot(null);
-    setStage("time");
-    setAnnouncement("Date selected. Choose an available time.");
+    await transitionWithLlmLead(
+      "time",
+      `${item.weekday}, ${item.day} selected. Choose an available time.`,
+      `The user selected ${item.weekday}, ${item.day} for the visit.`,
+      fallbackRoutingCandidates(),
+    );
   }
 
-  function pickSpecialtyCard(card: SpecialtyRecommendationCard) {
+  async function selectTime(item: AvailableSlot) {
+    setSlot(item);
+
+    await transitionWithLlmLead(
+      "review",
+      "Time selected. Review your appointment before confirming.",
+      `The patient selected a ${item.startsAt} appointment time.`,
+      fallbackRoutingCandidates(),
+    );
+  }
+
+  async function pickSpecialtyCard(card: SpecialtyRecommendationCard) {
     if (!activeRoutingResult) return;
     setRecommendation(recommendationForSpecialty(card, {
       ...activeRoutingResult,
       candidates: [card],
     }));
     setSpecialtyCards([card]);
-    setStage("location");
-    setAnnouncement(
+
+    await transitionWithLlmLead(
+      "location",
       `${SPECIALTY_LABELS[card.specialtyId]} selected. Choose a location next.`,
+      `User selected ${SPECIALTY_LABELS[card.specialtyId]} as the best option.`,
+      activeRoutingResult?.candidates ?? [card],
     );
   }
 
@@ -1056,13 +1188,7 @@ export function ChatScheduler({
                       <button
                         className="choice"
                         key={item.startsAt}
-                        onClick={() => {
-                          setSlot(item);
-                          setStage("review");
-                          setAnnouncement(
-                            "Time selected. Review your appointment.",
-                          );
-                        }}
+                        onClick={() => selectTime(item)}
                       >
                         {formatTime(item)}
                         <small>{durationMinutes} minutes</small>
