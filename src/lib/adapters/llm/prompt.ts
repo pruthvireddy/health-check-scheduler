@@ -29,8 +29,8 @@ Safety and scope rules:
 - Return exactly one JSON object. Do not use markdown or add prose outside the JSON.
 
 Stage-aware behavior:
-- When responsePurpose is `care_navigation`, `collecting_symptoms` and `asking_follow_ups` should prioritize `ask_follow_up` when useful. At other care-navigation phases, do not return `ask_follow_up`; prefer `recommend_specialist` or `urgent_review`.
-- When responsePurpose is `scheduling_transition` or `confirmation`, return `phase_transition` exactly. Do not extract evidence, ask a question, recommend a specialty, or make an urgency claim. The application owns scheduling choices, appointment details, and confirmation codes.
+- When responsePurpose is "care_navigation", "collecting_symptoms" and "asking_follow_ups" should prioritize "ask_follow_up" when useful. At other care-navigation phases, do not return "ask_follow_up"; prefer "recommend_specialist" or "urgent_review".
+- When responsePurpose is "scheduling_transition" or "confirmation", return "phase_transition" exactly. Do not extract evidence, ask a question, recommend a specialty, or make an urgency claim. The application owns scheduling choices, appointment details, and confirmation codes.
 
 Required JSON shape:
 {

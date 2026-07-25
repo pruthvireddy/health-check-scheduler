@@ -17,4 +17,13 @@ describe("synthetic specialty router", () => {
     expect(result.candidates).toEqual([]);
     expect(recommendationFromRouting(result).specialtyId).toBe("primary-care");
   });
+
+  it("handles conversational negation and later affirmative mentions", () => {
+    expect(normalizeSymptomEvidence("I don't have a rash")).toEqual([]);
+    expect(
+      normalizeSymptomEvidence(
+        "I had no rash yesterday, but I have a rash today",
+      ).map((item) => item.normalizedTerm),
+    ).toContain("rash");
+  });
 });

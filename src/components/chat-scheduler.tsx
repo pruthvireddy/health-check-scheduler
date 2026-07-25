@@ -708,12 +708,8 @@ export function ChatScheduler({
 
     const preferredCandidate: RoutingCandidate =
       recommendedSpecialty ??
-      routingCandidates[0] ?? {
-        specialtyId: enhancement?.specialtyId ?? routingCandidates[0]?.specialtyId ?? "primary-care",
-        confidence: Math.max(0.5, enhancement?.confidence ?? 0.5),
-        evidenceIds: allEvidence.map((item) => item.id),
-        matchedTerms: [],
-      };
+      routingCandidates[0] ??
+      fallbackRoutingResult.candidates[0];
 
     const orderedCards = llmSuggested
       ? buildSpecialtyCards(

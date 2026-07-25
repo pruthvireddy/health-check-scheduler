@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ChatScheduler } from "@/components/chat-scheduler";
 import { syntheticFallbackResponse } from "@/lib/llm";
 
@@ -75,11 +75,13 @@ describe("chat scheduler prototype", () => {
   });
 
   it("completes the deterministic symptom-to-confirmation flow", async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => syntheticFallbackResponse("No model token configured"),
-    }));
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+        ok: true,
+        status: 200,
+        json: async () => syntheticFallbackResponse("No model token configured"),
+      }),
+    );
     vi.stubGlobal(
       "fetch",
       fetchMock,
@@ -93,23 +95,19 @@ describe("chat scheduler prototype", () => {
     await screen.findAllByText(/One more question|other symptoms/i);
 
     send("No fever or injury, but the rash is itchy");
-    await screen.findByRole("heading", { name: "Dermatology" });
+    await screen.findByRole("button", { name: /Dermatology/ });
 
     fireEvent.click(screen.getByRole("button", { name: "Find an appointment" }));
-    fireEvent.click(screen.getByRole("button", { name: /Northside Clinic/ }));
-    fireEvent.click(screen.getByRole("button", { name: /20 minutes/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Northside Clinic/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /20 minutes/ }));
 
-    await waitFor(() => {
-      expect(container.querySelector(".choice-grid.three .choice")).toBeTruthy();
-    });
-    fireEvent.click(container.querySelector(".choice-grid.three .choice")!);
+    const dateSection = await screen.findByRole("region", { name: "Select date" });
+    fireEvent.click(within(dateSection).getAllByRole("button")[0]);
 
-    await waitFor(() => {
-      expect(container.querySelector(".choice-grid.three .choice")).toBeTruthy();
-    });
-    fireEvent.click(container.querySelector(".choice-grid.three .choice")!);
+    const timeSection = await screen.findByRole("region", { name: "Select time" });
+    fireEvent.click(within(timeSection).getAllByRole("button")[0]);
 
-    fireEvent.change(screen.getByPlaceholderText("How should we address you?"), {
+    fireEvent.change(await screen.findByPlaceholderText("How should we address you?"), {
       target: { value: "Demo User" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Confirm appointment" }));
@@ -118,8 +116,8 @@ describe("chat scheduler prototype", () => {
     expect(screen.getByText(/^HCS-[A-Z0-9]{6}$/)).toBeInTheDocument();
     expect(screen.getByText(/Nothing was sent to a clinic/)).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(9));
-    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
-    const confirmationRequest = JSON.parse(lastCall[1]?.body as string);
+    const confirmationInit = fetchMock.mock.calls.at(-1)?.[1];
+    const confirmationRequest = JSON.parse(String(confirmationInit?.body));
     expect(confirmationRequest).toMatchObject({
       stage: "confirmed",
       purpose: "confirmation",

@@ -117,10 +117,7 @@ export function validateModelDecisionValue(
     return { success: false, reason: "invalid_model_output" };
   }
 
-  if (
-    decision.nextAction === "recommend_specialist" &&
-    decision.confidence < confidenceThreshold
-  ) {
+  if (decision.confidence < confidenceThreshold) {
     return { success: false, reason: "low_confidence" };
   }
 

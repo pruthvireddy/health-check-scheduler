@@ -26,8 +26,32 @@ const TERM_ALIASES: Record<string, string> = {
 const normalizeTerm = (value: string): string =>
   value.toLowerCase().replace(/\s+/g, " ").trim();
 
-const negated = (text: string, term: string): boolean =>
-  new RegExp(`(?:no|not|without|denies)\s+(?:[a-z]+\s+){0,2}${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i").test(text);
+function hasAffirmedOccurrence(text: string, term: string): boolean {
+  let searchFrom = 0;
+
+  while (searchFrom < text.length) {
+    const offset = text.indexOf(term, searchFrom);
+    if (offset < 0) return false;
+
+    const before = offset > 0 ? text[offset - 1] : "";
+    const after = text[offset + term.length] ?? "";
+    if (/\w/.test(before) || /\w/.test(after)) {
+      searchFrom = offset + term.length;
+      continue;
+    }
+
+    const preceding = text.slice(Math.max(0, offset - 48), offset);
+    const isNegated =
+      /\b(?:no|not|without|denies?|never|negative for|(?:do|does)\s+not\s+have|(?:do|does)n['’]?t\s+have)\s+(?:[\w-]+\s+){0,4}$/i.test(
+        preceding,
+      );
+    if (!isNegated) return true;
+
+    searchFrom = offset + term.length;
+  }
+
+  return false;
+}
 
 const SUPPORTED_SYMPTOM_TERMS = new Set<string>([
   ...syntheticMappings.flatMap((mapping) => mapping.symptomTerms),
@@ -43,7 +67,7 @@ export function normalizeSymptomEvidence(
   const evidence: SymptomEvidence[] = [];
 
   for (const term of SUPPORTED_SYMPTOM_TERMS) {
-    if (!lower.includes(term) || negated(lower, term)) continue;
+    if (!hasAffirmedOccurrence(lower, term)) continue;
     const normalizedTerm = TERM_ALIASES[term] ?? term;
     if (!evidence.some((item) => item.normalizedTerm === normalizedTerm)) {
       evidence.push({
@@ -108,6 +132,8 @@ export class SyntheticSpecialtyRouter implements SpecialtyRouter {
 }
 
 export class HybridSpecialtyRouter implements SpecialtyRouter {
+  readonly backend = "csv" as const;
+
   private readonly compiledRouter = createCompiledSpecialtyRouter();
   private readonly syntheticRouter = createSyntheticSpecialtyRouter();
 
@@ -179,4 +205,3 @@ export function createSyntheticSpecialtyRouter(): SpecialtyRouter {
 export function createHybridSpecialtyRouter(): SpecialtyRouter {
   return new HybridSpecialtyRouter();
 }
-
