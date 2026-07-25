@@ -1,9 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, Output } from "ai";
+import { generateText } from "ai";
 
 import {
-  modelDecisionSchema,
-  type ModelDecision,
   type ParsedChatEnhancementRequest,
 } from "@/lib/llm/contracts";
 
@@ -14,7 +12,7 @@ import {
 } from "./prompt";
 
 export type HuggingFaceEnhancementResult = {
-  decision: ModelDecision;
+  text: string;
   model: string;
 };
 
@@ -40,17 +38,11 @@ export async function requestHuggingFaceEnhancement(
     model: huggingFace(config.model),
     system: ENHANCEMENT_SYSTEM_PROMPT,
     prompt: buildEnhancementPrompt(request),
-    output: Output.object({
-      schema: modelDecisionSchema,
-      name: "health_scheduler_decision",
-      description:
-        "A non-diagnostic, allowlisted next action for a health scheduling conversation.",
-    }),
     temperature: 0,
     maxOutputTokens: config.maxOutputTokens,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(config.timeoutMs),
   });
 
-  return { decision: result.output, model: config.model };
+  return { text: result.text, model: config.model };
 }

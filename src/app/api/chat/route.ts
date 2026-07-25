@@ -2,7 +2,7 @@ import { screenForUrgentRedFlags } from "@/lib/core/safety";
 import {
   getLlmEnhancementConfig,
   requestHuggingFaceEnhancement,
-  validateModelDecisionValue,
+  validateModelDecision,
 } from "@/lib/adapters/llm";
 import {
   chatEnhancementRequestSchema,
@@ -132,8 +132,8 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const providerResult = await requestHuggingFaceEnhancement(input, config);
-    const validation = validateModelDecisionValue(
-      providerResult.decision,
+    const validation = validateModelDecision(
+      providerResult.text,
       input,
       config.confidenceThreshold,
     );
